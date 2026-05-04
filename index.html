@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <meta name="theme-color" content="#070d1a"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="WealthOS"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <title>WealthOS — 통합 자산관리</title>
+
+  <!-- PWA 매니페스트 인라인 (별도 파일 없이) -->
+  <script>
+    // 매니페스트를 동적으로 생성해 링크 태그 주입
+    const manifest = {
+      name: "WealthOS 통합 자산관리",
+      short_name: "WealthOS",
+      description: "주식·연금·부동산·차량·VIX 공포지수 통합 자산관리",
+      start_url: "./",
+      display: "standalone",
+      background_color: "#070d1a",
+      theme_color: "#070d1a",
+      orientation: "portrait",
+      icons: [
+        { src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23070d1a'/><text y='68' x='50' text-anchor='middle' font-size='60'>📊</text></svg>", sizes: "192x192", type: "image/svg+xml" },
+        { src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23070d1a'/><text y='68' x='50' text-anchor='middle' font-size='60'>📊</text></svg>", sizes: "512x512", type: "image/svg+xml" }
+      ]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('link');
+    link.rel   = 'manifest'; link.href = url;
+    document.head.appendChild(link);
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=DM+Mono:wght@400;500;600&display=swap"/>
+
+  <style>
+/* ═══════════════════════ RESET & VARS ═══════════════════════ */
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#070d1a;--s1:#0d1828;--s2:#111e33;--s3:#16253e;
+  --b1:rgba(80,140,255,.10);--b2:rgba(80,140,255,.22);
+  --acc:#4f80ff;--acc2:#7eb8ff;
+  --g:#34d399;--r:#f87171;--y:#fbbf24;--p:#a78bfa;
+  --tx:#ddeeff;--tx2:#7a99cc;--tx3:#3a5070;
+  --nav:64px;--top:52px;
+  --rad:12px;--rad-s:8px;
+  --mono:'DM Mono',monospace;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+html,body{
+  background:var(--bg);color:var(--tx);
+  font-family:'Noto Sans KR',sans-serif;
+  font-size:14px;line-height:1.5;
+  height:100%;overscroll-behavior:none;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ═══════════════════════ LAYOUT ═══════════════════════ */
+#app{display:flex;flex-direction:column;height:100%;max-width:480px;margin:0 auto;position:relative;}
+
+/* Topbar */
+#topbar{
+  position:fixed;top:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;z-index:100;
+  height:calc(var(--top) + var(--safe-t));
+  padding-top:var(--safe-t);
+  background:rgba(7,13,26,.95);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border-bottom:1px solid var(--b1);
+  display:flex;align-items:center;padding-left:16px;padding-right:16px;gap:10px;
+}
+.logo{font-size:17px;font-weight:900;color:var(--acc2);letter-spacing:-.4px;flex:1;}
+.topbar-time{font-family:var(--mono);font-size:10px;color:var(--tx3);}
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--g);animation:pulse 2s infinite;flex-shrink:0;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:19px;padding:4px 6px;color:var(--tx3);line-height:1;}
+
+/* Scroll area */
+#scroll{
+  position:fixed;
+  top:calc(var(--top) + var(--safe-t));
+  bottom:calc(var(--nav) + var(--safe-b));
+  left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  padding:14px 12px 8px;
+}
+
+/* Tabbar */
+#tabbar{
+  position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;z-index:100;
+  background:rgba(7,13,26,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--b1);
+  display:flex;align-items:flex-start;
+  padding-top:8px;
+  padding-bottom:calc(8px + var(--safe-b));
+}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:0 2px;}
+.tab-ico{font-size:21px;transition:transform .15s;}
+.tab-lbl{font-size:9.5px;font-weight:700;color:var(--tx3);transition:color .15s;white-space:nowrap;}
+.tab.on .tab-ico{transform:scale(1.15);}
+.tab.on .tab-lbl{color:var(--acc2);}
+.tab-bdg{
+  position:absolute;top:-3px;right:-6px;
+  background:var(--r);color:#fff;font-size:8px;font-weight:900;
+  border-radius:8px;padding:1px 5px;min-width:14px;text-align:center;
+}
+
+/* ═══════════════════════ CARDS ═══════════════════════ */
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rad);padding:16px;margin-bottom:12px;}
+.card-sm{padding:12px 14px;}
+.card-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:12px;}
+
+/* Horizontal scroll */
+.hrow{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;margin:0 -12px;padding-left:12px;padding-right:12px;}
+.hrow::-webkit-scrollbar{display:none;}
+.hcard{
+  min-width:128px;flex-shrink:0;
+  background:var(--s1);border:1px solid var(--b1);
+  border-radius:var(--rad);padding:13px;position:relative;overflow:hidden;
+}
+.hcard::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--hc,var(--acc));}
+.hc-lbl{font-size:9.5px;color:var(--tx3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.hc-val{font-size:16px;font-weight:900;font-family:var(--mono);}
+.hc-sub{font-size:10px;color:var(--tx3);margin-top:3px;}
+
+/* Stamp */
+.stamp{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;color:var(--tx3);background:var(--s2);padding:2px 7px;border-radius:4px;border:1px solid var(--b1);}
+
+/* ═══════════════════════ TABLE ═══════════════════════ */
+.tbl{width:100%;border-collapse:collapse;}
+.tbl th{font-size:9.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;padding:5px 7px;border-bottom:1px solid var(--b1);text-align:left;}
+.tbl td{padding:8px 7px;border-bottom:1px solid rgba(80,140,255,.05);font-size:12px;vertical-align:middle;}
+.tbl tr:last-child td{border:none;}
+
+/* ═══════════════════════ TAGS ═══════════════════════ */
+.tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;}
+.buy{background:rgba(52,211,153,.14);color:#34d399;border:1px solid rgba(52,211,153,.2);}
+.sell{background:rgba(248,113,113,.14);color:#f87171;border:1px solid rgba(248,113,113,.2);}
+.hold{background:rgba(251,191,36,.14);color:#fbbf24;border:1px solid rgba(251,191,36,.2);}
+.watch{background:rgba(167,139,250,.14);color:#a78bfa;border:1px solid rgba(167,139,250,.2);}
+.up{color:#34d399;}.dn{color:#f87171;}.dim{color:var(--tx3);}
+
+/* ═══════════════════════ BUTTONS ═══════════════════════ */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  padding:11px 16px;border-radius:var(--rad-s);font-size:13px;font-weight:700;
+  cursor:pointer;border:none;font-family:'Noto Sans KR',sans-serif;
+  transition:opacity .12s,transform .12s;user-select:none;}
+.btn:active{opacity:.7;transform:scale(.97);}
+.btn-p{background:var(--acc);color:#fff;}
+.btn-g{background:transparent;border:1px solid var(--b2);color:var(--tx2);}
+.btn-gr{background:rgba(52,211,153,.14);border:1px solid rgba(52,211,153,.2);color:#34d399;}
+.btn-rd{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.2);color:#f87171;}
+.btn-w{width:100%;}
+.btn-sm{padding:7px 12px;font-size:11.5px;}
+.btn-xs{padding:4px 9px;font-size:10.5px;}
+
+/* ═══════════════════════ FORM ═══════════════════════ */
+.fg{margin-bottom:12px;}
+.fl{display:block;font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:5px;}
+.fi,.fs{
+  width:100%;background:var(--s2);border:1px solid var(--b2);
+  border-radius:var(--rad-s);padding:12px 13px;color:var(--tx);
+  font-size:14px;font-family:'Noto Sans KR',sans-serif;
+  outline:none;-webkit-appearance:none;appearance:none;
+}
+.fi:focus,.fs:focus{border-color:var(--acc);}
+.fs option{background:var(--s2);}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+/* ═══════════════════════ DRAWER ═══════════════════════ */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;backdrop-filter:blur(4px);animation:fadein .18s;}
+@keyframes fadein{from{opacity:0;}to{opacity:1;}}
+.drawer{
+  position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;
+  background:var(--s1);border-radius:18px 18px 0 0;
+  z-index:201;padding:0 16px;
+  max-height:88vh;overflow-y:auto;
+  animation:slideup .25s cubic-bezier(.34,1.2,.64,1);
+  padding-bottom:calc(20px + var(--safe-b));
+}
+@keyframes slideup{from{transform:translate(-50%,100%);}to{transform:translate(-50%,0);}}
+.dhandle{width:36px;height:4px;border-radius:2px;background:var(--s3);margin:12px auto 16px;}
+.dtitle{font-size:16px;font-weight:900;margin-bottom:16px;}
+
+/* ═══════════════════════ VIX ═══════════════════════ */
+.vix-num{font-size:60px;font-weight:900;font-family:var(--mono);text-align:center;line-height:1;}
+.vix-badge{font-size:13px;font-weight:700;padding:3px 14px;border-radius:20px;display:inline-block;margin-top:5px;}
+.vix-bar{height:13px;border-radius:7px;background:linear-gradient(90deg,#00ffaa,#34d399 20%,#fbbf24 45%,#fb923c 70%,#ff4444);position:relative;margin:14px 0 5px;}
+.vix-needle{position:absolute;top:-4px;width:4px;height:21px;border-radius:2px;background:#fff;transform:translateX(-50%);box-shadow:0 0 8px rgba(255,255,255,.7);transition:left .9s cubic-bezier(.34,1.4,.64,1);}
+.vix-lbl{display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);}
+.vix-hist{display:flex;align-items:flex-end;gap:3px;height:38px;margin-top:10px;}
+.vh-bar{flex:1;border-radius:2px 2px 0 0;}
+
+/* ═══════════════════════ REBAL BAR ═══════════════════════ */
+.rb-wrap{margin-bottom:12px;}
+.rb-head{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;}
+.rb-track{height:6px;background:var(--s3);border-radius:3px;position:relative;overflow:visible;}
+.rb-fill{height:100%;border-radius:3px;transition:width .5s;}
+.rb-tgt{position:absolute;top:-3px;bottom:-3px;width:2px;background:rgba(255,255,255,.5);border-radius:1px;}
+
+/* ═══════════════════════ MISC ═══════════════════════ */
+.prog{height:5px;background:var(--s3);border-radius:3px;overflow:hidden;margin-top:8px;}
+.prog-f{height:100%;border-radius:3px;transition:width .5s;}
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.sec-title{font-size:15px;font-weight:900;}
+.empty{text-align:center;padding:40px 16px;color:var(--tx3);}
+.empty-ico{font-size:40px;margin-bottom:10px;}
+.tabs-row{display:flex;gap:3px;background:var(--s2);border-radius:8px;padding:3px;margin-bottom:14px;}
+.tab-pill{flex:1;text-align:center;padding:8px 4px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:var(--tx2);transition:all .14s;}
+.tab-pill.on{background:var(--s3);color:var(--tx);font-weight:700;}
+.toggle{width:40px;height:22px;border-radius:11px;background:var(--s3);cursor:pointer;position:relative;transition:background .2s;flex-shrink:0;}
+.toggle.on{background:var(--acc);}
+.toggle::after{content:'';position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:3px;left:3px;transition:left .2s;}
+.toggle.on::after{left:21px;}
+.alert-item{display:flex;gap:10px;padding:10px 12px;border-radius:var(--rad-s);background:var(--s2);border-left:3px solid var(--b2);margin-bottom:8px;}
+.spinner{width:16px;height:16px;border:2px solid rgba(79,128,255,.3);border-top-color:var(--acc);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.photo-drop{border:2px dashed var(--b2);border-radius:var(--rad);padding:26px 16px;text-align:center;cursor:pointer;transition:all .18s;}
+.photo-drop.drag{border-color:var(--acc);background:rgba(79,128,255,.05);}
+.photo-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;}
+.photo-thumb{position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;background:var(--s2);}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;}
+.photo-del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.75);border:none;color:#fff;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;}
+.ai-box{background:var(--s2);border-radius:var(--rad-s);padding:12px 14px;margin-top:10px;font-size:12px;color:var(--tx2);line-height:1.6;}
+
+@media(min-width:480px){
+  #app,#topbar,#tabbar,#scroll,.drawer{border-left:1px solid var(--b1);border-right:1px solid var(--b1);}
+  #scroll{max-width:480px;}
+}
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="logo">📊 WealthOS</div>
+    <div class="pulse"></div>
+    <div class="topbar-time" id="clock">--:--</div>
+    <button class="icon-btn" onclick="goPage('settings')">⚙</button>
+  </div>
+  <div id="scroll"></div>
+  <div id="tabbar"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   WealthOS PWA — 단일 HTML 파일 앱
+   수정 방법: 이 파일을 편집기로 열어서 JS 부분 수정
+   → 저장 → 브라우저 새로고침 (F5) → 즉시 반영
+═══════════════════════════════════════════════════════ */
+
+/* ── 1. 스토리지 ────────────────────────────────────── */
+const DB = {
+  get(k){ try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;} },
+  set(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch{} },
+  del(k){ try{localStorage.removeItem(k);}catch{} }
+};
+
+/* ── 2. 기본 데이터 ──────────────────────────────────── */
+const DEFAULT = {
+  vix:{value:28.4,prev:24.1,hist:[18,20,22,19,24,28,31,28,26,28],at:new Date().toISOString()},
+  pension:{
+    total:342000000,
+    target:{ds:40,fs:30,bd:20,al:10},
+    current:{ds:47,fs:28,bd:18,al:7},
+    funds:[
+      {id:1,name:"삼성 TDF 2040",type:"국내주식",amount:96500000,ytd:8.4,signal:"hold"},
+      {id:2,name:"미래에셋 글로벌",type:"해외주식",amount:74200000,ytd:12.1,signal:"buy"},
+      {id:3,name:"한국채권인덱스",type:"채권",amount:52800000,ytd:2.3,signal:"hold"},
+      {id:4,name:"KB리츠혼합",type:"대안",amount:18500000,ytd:-1.2,signal:"watch"},
+    ],at:new Date().toISOString()
+  },
+  stocks:[
+    {id:1,ticker:"005930",name:"삼성전자",qty:400,avg:68500,cur:74200,signal:"buy"},
+    {id:2,ticker:"000660",name:"SK하이닉스",qty:150,avg:142000,cur:188500,signal:"hold"},
+    {id:3,ticker:"035420",name:"NAVER",qty:80,avg:195000,cur:178000,signal:"buy"},
+    {id:4,ticker:"051910",name:"LG화학",qty:60,avg:340000,cur:298000,signal:"sell"},
+  ],
+  realestate:[
+    {id:1,name:"강남구 아파트",type:"아파트",buy:1200000000,cur:1380000000,signal:"hold",ryd:2.8},
+    {id:2,name:"판교 오피스텔",type:"오피스텔",buy:280000000,cur:265000000,signal:"watch",ryd:4.2},
+  ],
+  vehicles:[
+    {id:1,name:"BMW 5시리즈",year:2022,buy:72000000,cur:58000000,km:38000,signal:"hold"},
+    {id:2,name:"테슬라 모델Y",year:2023,buy:62000000,cur:52000000,km:22000,signal:"hold"},
+  ],
+  cash:150000000,
+  at:new Date().toISOString()
+};
+
+/* ── 3. 상태 ─────────────────────────────────────────── */
+let S = DB.get("wo_data") || JSON.parse(JSON.stringify(DEFAULT));
+let currentPage = "home";
+
+function save(){ DB.set("wo_data",S); }
+function ts(){ return new Date().toISOString(); }
+function now(){ return new Date(); }
+
+/* ── 4. 유틸 ─────────────────────────────────────────── */
+const N  = n => new Intl.NumberFormat("ko-KR").format(n);
+const B  = n => n>=1e8?(n/1e8).toFixed(1)+"억":n>=1e4?(n/1e4).toFixed(0)+"만":N(n);
+const DT = d => { const x=new Date(d); return x.toLocaleDateString("ko-KR",{month:"2-digit",day:"2-digit"})+" "+x.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}); };
+const DF = d => new Date(d).toLocaleDateString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit"});
+const PL = (a,c) => (((c-a)/a)*100).toFixed(1);
+const esc= s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ── 5. VIX 구간 ─────────────────────────────────────── */
+const VZ = [
+  {min:0, max:15, name:"극도 탐욕", col:"#00ffaa", act:["주식 20% 축소","채권·현금 확대","고평가 매도"]},
+  {min:15,max:20, name:"탐욕",     col:"#34d399", act:["주식 10% 축소","배당주 유지","현금 20%+"]},
+  {min:20,max:25, name:"중립",     col:"#fbbf24", act:["현 포지션 유지","분기 점검만","보수적 진입"]},
+  {min:25,max:35, name:"공포",     col:"#fb923c", act:["분할 매수 시작","우량주 집중","연금 주식+5%"]},
+  {min:35,max:99, name:"극도 공포",col:"#ff4444", act:["적극 저점 매수","ETF 집중 매수","주식 +20%"]},
+];
+const GZ = v => VZ.find(z=>v>=z.min&&v<z.max)||VZ[4];
+
+function tag(s){
+  const m={buy:["매수","buy"],sell:["매도","sell"],hold:["보유","hold"],watch:["관망","watch"]};
+  const[l,c]=m[s]||["—",""];
+  return `<span class="tag ${c}">${l}</span>`;
+}
+
+/* ── 6. 탭바 렌더 ────────────────────────────────────── */
+const TABS=[
+  {id:"home",ico:"◉",lbl:"홈"},
+  {id:"vix",ico:"😱",lbl:"공포지수"},
+  {id:"pension",ico:"🏦",lbl:"연금"},
+  {id:"stocks",ico:"📈",lbl:"주식"},
+  {id:"assets",ico:"🏠",lbl:"자산"},
+  {id:"input",ico:"✏️",lbl:"입력"},
+];
+
+function renderTabbar(){
+  const el = document.getElementById("tabbar");
+  el.innerHTML = TABS.map(t=>`
+    <div class="tab ${currentPage===t.id?"on":""}" onclick="goPage('${t.id}')">
+      <div style="position:relative;display:inline-block;">
+        <div class="tab-ico">${t.ico}</div>
+      </div>
+      <div class="tab-lbl">${t.lbl}</div>
+    </div>`).join("");
+}
+
+function goPage(p){ currentPage=p; renderTabbar(); renderPage(); window.scrollTo(0,0); document.getElementById("scroll").scrollTop=0; }
+
+/* ── 7. 페이지 라우터 ────────────────────────────────── */
+function renderPage(){
+  const el = document.getElementById("scroll");
+  const pages = {home:pageHome,vix:pageVix,pension:pagePension,stocks:pageStocks,assets:pageAssets,input:pageInput,settings:pageSettings};
+  el.innerHTML = (pages[currentPage]||pageHome)();
+  bindEvents();
+}
+
+/* ── 8. 이벤트 바인딩 ────────────────────────────────── */
+function bindEvents(){
+  // 모든 data-fn 속성을 찾아 클릭 이벤트 바인딩
+  document.querySelectorAll("[data-fn]").forEach(el=>{
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const fn = el.getAttribute("data-fn");
+      const arg= el.getAttribute("data-arg");
+      if(window[fn]) window[fn](arg);
+    });
+  });
+  // 드로어 오버레이 클릭 닫기
+  document.querySelectorAll(".overlay").forEach(el=>{
+    el.addEventListener("click", e => { if(e.target===el) closeDrawer(); });
+  });
+}
+
+function closeDrawer(){
+  const d=document.getElementById("active-drawer");
+  if(d) d.remove();
+}
+
+function openDrawer(html){
+  closeDrawer();
+  const d=document.createElement("div");
+  d.id="active-drawer";
+  d.innerHTML=`<div class="overlay"><div class="drawer"><div class="dhandle"></div>${html}</div></div>`;
+  document.body.appendChild(d);
+  d.querySelector(".overlay").addEventListener("click",e=>{if(e.target===d.querySelector(".overlay"))closeDrawer();});
+}
+
+/* ══════════════════════════════════════════════════════
+   PAGE: 홈
+══════════════════════════════════════════════════════ */
+function pageHome(){
+  const stk = S.stocks.reduce((a,x)=>a+x.qty*x.cur,0);
+  const re  = S.realestate.reduce((a,x)=>a+x.cur,0);
+  const vh  = S.vehicles.reduce((a,x)=>a+x.cur,0);
+  const total = stk+re+vh+S.pension.total+(S.cash||0);
+  const z = GZ(S.vix.value);
+
+  return `
+  <div class="card" style="background:linear-gradient(135deg,#0d1828,#111e33);border-color:rgba(79,128,255,.2);margin-bottom:14px;">
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;">총 자산 현황</div>
+    <div style="font-size:28px;font-weight:900;font-family:var(--mono);color:var(--acc2);">${B(total)}원</div>
+    <div class="stamp" style="margin-top:6px;">📅 ${DF(S.at)} 기준</div>
+    <div style="margin-top:12px;display:flex;align-items:center;gap:10px;">
+      <div style="background:${z.col}22;border:1px solid ${z.col}44;border-radius:20px;padding:3px 12px;display:inline-flex;align-items:center;gap:6px;">
+        <span style="font-size:12px;font-weight:700;color:${z.col};">VIX ${S.vix.value}</span>
+        <span style="font-size:11px;color:${z.col};">${z.name}</span>
+      </div>
+      <span style="font-size:11px;color:var(--tx3);">→ ${z.act[0]}</span>
+    </div>
+  </div>
+
+  <div style="font-size:12px;color:var(--tx3);margin-bottom:8px;">자산 구성</div>
+  <div class="hrow" style="margin-bottom:16px;">
+    ${[
+      {l:"주식",v:stk,c:"#4f80ff"},
+      {l:"부동산",v:re,c:"#34d399"},
+      {l:"연금",v:S.pension.total,c:"#fbbf24"},
+      {l:"차량",v:vh,c:"#a78bfa"},
+      {l:"현금",v:S.cash||0,c:"#7eb8ff"},
+    ].map(x=>`
+      <div class="hcard" style="--hc:${x.c}">
+        <div class="hc-lbl">${x.l}</div>
+        <div class="hc-val" style="color:${x.c};font-size:15px;">${B(x.v)}</div>
+        <div class="hc-sub">${total>0?((x.v/total)*100).toFixed(0):0}%</div>
+      </div>`).join("")}
+  </div>
+
+  <div class="sec-hd"><div class="sec-title">🔔 주요 알림</div></div>
+  <div class="alert-item" style="border-left-color:${z.col};">
+    <span style="font-size:18px;">😱</span>
+    <div>
+      <div style="font-size:12.5px;color:var(--tx2);">VIX ${S.vix.value} — ${z.name}. ${z.act[0]}</div>
+      <div class="stamp" style="margin-top:3px;">분석 ${DT(S.vix.at)}</div>
+    </div>
+  </div>
+  <div class="alert-item" style="border-left-color:var(--y);">
+    <span style="font-size:18px;">⚖️</span>
+    <div>
+      <div style="font-size:12.5px;color:var(--tx2);">연금 국내주식 +${S.pension.current.ds-S.pension.target.ds}% 초과 — 리밸런싱 권고</div>
+      <div class="stamp" style="margin-top:3px;">${DT(S.pension.at||S.at)}</div>
+    </div>
+  </div>
+  `;
+}
+
+/* ══════════════════════════════════════════════════════
+   PAGE: VIX
+══════════════════════════════════════════════════════ */
+function pageVix(){
+  const v = S.vix.value;
+  const z = GZ(v);
+  const pos = Math.min(Math.max((v/60)*100,2),98);
+  const maxH = Math.max(...S.vix.hist);
+  const diff = (v - S.vix.prev).toFixed(1);
+  const diffColor = v>S.vix.prev?"var(--r)":"var(--g)";
+
+  return `
+  <div class="sec-hd">
+    <div class="sec-title">😱 공포지수 리밸런싱</div>
+    <button class="btn btn-g btn-sm" data-fn="openVixForm">수동 입력</button>
+  </div>
+
+  <div class="card">
+    <div class="stamp" style="margin-bottom:12px;">
+      <div class="pulse" style="margin-right:2px;"></div>분석 시각 ${DT(S.vix.at)}
+    </div>
+    <div style="text-align:center;margin-bottom:8px;">
+      <div class="vix-num" style="color:${z.col};">${v}</div>
+      <span class="vix-badge" style="background:${z.col}22;color:${z.col};">${z.name}</span>
+      <div style="font-size:11px;color:var(--tx3);margin-top:5px;font-family:var(--mono);">
+        전일比 <span style="color:${diffColor};">${diff>0?"+":""}${diff}</span>
+      </div>
+    </div>
+    <div class="vix-bar">
+      <div class="vix-needle" style="left:${pos}%;"></div>
+    </div>
+    <div class="vix-lbl">
+      <span>극도탐욕<br>&lt;15</span>
+      <span style="text-align:center">탐욕<br>~20</span>
+      <span style="text-align:center">중립<br>~25</span>
+      <span style="text-align:center">공포<br>~35</span>
+      <span style="text-align:right">극도공포<br>&gt;35</span>
+    </div>
+    <div class="vix-hist">
+      ${S.vix.hist.map((h,i)=>`<div class="vh-bar" style="height:${(h/maxH)*100}%;background:${i===S.vix.hist.length-1?z.col:"var(--s3)"};min-height:2px;border-radius:2px 2px 0 0;"></div>`).join("")}
+    </div>
+    <div style="font-size:9px;color:var(--tx3);text-align:right;margin-top:2px;">10일 추이</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">⚡ 현재 구간 권장 액션</div>
+    ${z.act.map(a=>`
+    <div style="display:flex;gap:8px;font-size:13px;color:var(--tx2);padding:8px 0;border-bottom:1px solid var(--b1);">
+      <span style="color:var(--acc);">→</span><span>${a}</span>
+    </div>`).join("")}
+    <div style="margin-top:10px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:11px;color:var(--tx3);">
+      ※ VIX 기반 자동 생성 제안 / 투자 판단은 본인 책임
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📊 VIX 구간별 권장 배분</div>
+    ${[
+      {z:"&lt;15 극도탐욕",s:30,b:40,c:20,a:10,cur:v<15},
+      {z:"15~20 탐욕",s:40,b:35,c:15,a:10,cur:v>=15&&v<20},
+      {z:"20~25 중립",s:50,b:30,c:10,a:10,cur:v>=20&&v<25},
+      {z:"25~35 공포",s:60,b:25,c:10,a:5,cur:v>=25&&v<35},
+      {z:"&gt;35 극도공포",s:70,b:20,c:5,a:5,cur:v>=35},
+    ].map(r=>`
+    <div style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:7px;margin-bottom:3px;
+      background:${r.cur?"rgba(79,128,255,.08)":"transparent"};border:1px solid ${r.cur?"rgba(79,128,255,.2)":"transparent"};">
+      <span style="flex:1;font-size:11.5px;font-weight:${r.cur?700:400};color:${r.cur?"var(--acc2)":"var(--tx2)"};">
+        ${r.cur?"▶ ":""}${r.z}
+      </span>
+      <span class="up" style="font-family:var(--mono);font-size:11px;">${r.s}%</span>
+      <span style="color:var(--y);font-family:var(--mono);font-size:11px;">${r.b}%</span>
+      <span class="dim" style="font-family:var(--mono);font-size:11px;">${r.c}%</span>
+    </div>`).join("")}
+    <div style="display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--tx3);">
+      <span><span class="up">■</span> 주식</span><span style="color:var(--y);">■</span> 채권<span class="dim">■</span> 현금
+    </div>
+  </div>`;
+}
+
+window.openVixForm = function(){
+  openDrawer(`
+    <div class="dtitle">🔧 VIX 수동 입력</div>
+    <div class="fg"><label class="fl">📅 기준 날짜</label>
+      <input class="fi" type="date" id="d-vix-date" value="${new Date().toISOString().split("T")[0]}"/>
+    </div>
+    <div class="fg"><label class="fl">VIX 지수 값</label>
+      <input class="fi" type="number" step="0.1" id="d-vix-val" placeholder="예: 28.4" value="${S.vix.value}"/>
+    </div>
+    <button class="btn btn-p btn-w" onclick="applyVix()">적용</button>
+  `);
+};
+window.applyVix = function(){
+  const v = parseFloat(document.getElementById("d-vix-val").value);
+  if(isNaN(v)||v<=0) return;
+  S.vix = {...S.vix, prev:S.vix.value, value:v, hist:[...S.vix.hist.slice(1),v], at:ts()};
+  S.at = ts(); save(); closeDrawer(); renderPage();
+};
+
+/* ══════════════════════════════════════════════════════
+   PAGE: 연금
+══════════════════════════════════════════════════════ */
+function pagePension(){
+  const p = S.pension;
+  const z = GZ(S.vix.value);
+  const COLS={ds:"#4f80ff",fs:"#34d399",bd:"#fbbf24",al:"#a78bfa"};
+  const LBLS={ds:"국내주식",fs:"해외주식",bd:"채권",al:"대안투자"};
+
+  return `
+  <div class="sec-hd">
+    <div class="sec-title">🏦 연금 관리</div>
+    <button class="btn btn-g btn-sm" data-fn="openAddFund">＋ 추가</button>
+  </div>
+
+  <div class="hrow" style="margin-bottom:14px;">
+    <div class="hcard" style="--hc:#fbbf24">
+      <div class="hc-lbl">연금 총액</div>
+      <div class="hc-val" style="color:#fbbf24;font-size:15px;">${B(p.total)}</div>
+    </div>
+    <div class="hcard" style="--hc:${z.col}">
+      <div class="hc-lbl">VIX 전략</div>
+      <div class="hc-val" style="color:${z.col};font-size:13px;">${z.name}</div>
+      <div class="hc-sub">${z.act[2]}</div>
+    </div>
+    <div class="hcard" style="--hc:#f87171">
+      <div class="hc-lbl">리밸런싱</div>
+      <div class="hc-val" style="color:#f87171;font-size:13px;">국내+${p.current.ds-p.target.ds}%</div>
+      <div class="hc-sub">조정 권고</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      ⚖️ 자산배분 현황
+      <span class="stamp" style="margin-left:auto;">${DT(p.at||S.at)}</span>
+    </div>
+    ${Object.keys(LBLS).map(k=>{
+      const cur=p.current[k], tgt=p.target[k], diff=cur-tgt;
+      return `<div class="rb-wrap">
+        <div class="rb-head">
+          <span style="color:var(--tx2);">${LBLS[k]}</span>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="color:${COLS[k]};font-family:var(--mono);font-size:13px;font-weight:700;">${cur}%</span>
+            <span class="dim" style="font-family:var(--mono);font-size:10px;">/${tgt}%</span>
+            <span style="font-family:var(--mono);font-size:10px;color:${diff>0?"var(--r)":diff<0?"var(--g)":"var(--tx3)"};">${diff>0?"+":""}${diff}%</span>
+          </div>
+        </div>
+        <div class="rb-track">
+          <div class="rb-fill" style="width:${Math.min(cur,100)}%;background:${COLS[k]};"></div>
+          <div class="rb-tgt" style="left:${tgt}%;"></div>
+        </div>
+      </div>`;}).join("")}
+    <button class="btn btn-p btn-w" style="margin-top:8px;" data-fn="openRebalDetail">💡 VIX 기반 리밸런싱 제안</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📋 연금 펀드</div>
+    ${p.funds.map((f,i)=>`
+    <div style="display:flex;align-items:center;padding:10px 0;border-bottom:${i<p.funds.length-1?"1px solid rgba(80,140,255,.06)":"none"};">
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:700;">${esc(f.name)}</div>
+        <div style="font-size:11px;color:var(--tx3);">${f.type} · ${B(f.amount)}원</div>
+      </div>
+      <div style="text-align:right;margin-right:10px;">
+        <div style="font-family:var(--mono);font-size:13px;font-weight:700;" class="${f.ytd>=0?"up":"dn"}">${f.ytd>=0?"+":""}${f.ytd}%</div>
+        ${tag(f.signal)}
+      </div>
+      <button class="btn btn-rd btn-xs" onclick="delFund(${f.id})">삭제</button>
+    </div>`).join("")}
+  </div>`;
+}
+
+window.delFund = id => {
+  S.pension.funds = S.pension.funds.filter(f=>f.id!==id);
+  S.pension.at = ts(); S.at = ts(); save(); renderPage();
+};
+
+window.openAddFund = function(){
+  openDrawer(`
+    <div class="dtitle">🏦 연금 펀드 추가</div>
+    <div class="fg"><label class="fl">📅 기준 날짜</label><input class="fi" type="date" id="d-fd" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <div class="fg"><label class="fl">펀드명</label><input class="fi" type="text" id="d-fn" placeholder="미래에셋 글로벌그로스"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">유형</label>
+        <select class="fs" id="d-ft"><option>국내주식</option><option>해외주식</option><option>채권</option><option>대안투자</option></select>
+      </div>
+      <div class="fg"><label class="fl">시그널</label>
+        <select class="fs" id="d-fs"><option value="buy">매수</option><option value="hold" selected>보유</option><option value="sell">매도</option><option value="watch">관망</option></select>
+      </div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">평가금액 (원)</label><input class="fi" type="number" id="d-fa" placeholder="50000000"/></div>
+      <div class="fg"><label class="fl">YTD (%)</label><input class="fi" type="number" step="0.1" id="d-fy" placeholder="5.2"/></div>
+    </div>
+    <button class="btn btn-p btn-w" onclick="saveFund()">저장</button>
+  `);
+};
+window.saveFund = function(){
+  const name=document.getElementById("d-fn").value.trim();
+  if(!name) return;
+  S.pension.funds.push({
+    id:Date.now(), name,
+    type:document.getElementById("d-ft").value,
+    signal:document.getElementById("d-fs").value,
+    amount:Number(document.getElementById("d-fa").value)||0,
+    ytd:Number(document.getElementById("d-fy").value)||0,
+  });
+  S.pension.at=ts(); S.at=ts(); save(); closeDrawer(); renderPage();
+};
+
+window.openRebalDetail = function(){
+  const v=S.vix.value; const z=GZ(v); const p=S.pension;
+  const isFear = v>=25;
+  openDrawer(`
+    <div class="dtitle">💡 VIX 기반 리밸런싱</div>
+    <div style="font-size:12px;color:var(--tx3);margin-bottom:12px;">VIX <b style="color:${z.col}">${v}</b> (${z.name}) 기준</div>
+    ${isFear?`
+    <div style="background:rgba(52,211,153,.07);border-radius:8px;padding:13px;border-left:3px solid var(--g);margin-bottom:10px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">${tag("buy")}<b style="color:var(--g);">국내주식 +5% 추가</b></div>
+      <div style="font-size:12px;color:var(--tx3);">공포 구간 — 저점 분할 매수 적기. 목표 초과 중이나 추가 확대 전략 유효.</div>
+    </div>
+    <div style="background:rgba(248,113,113,.07);border-radius:8px;padding:13px;border-left:3px solid var(--r);">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">${tag("sell")}<b style="color:var(--r);">채권 -3% → 주식 재원</b></div>
+      <div style="font-size:12px;color:var(--tx3);">채권 일부 청산 후 주식 매수. 장기 수익률 극대화.</div>
+    </div>`:`
+    <div style="background:rgba(248,113,113,.07);border-radius:8px;padding:13px;border-left:3px solid var(--r);margin-bottom:10px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">${tag("sell")}<b style="color:var(--r);">국내주식 -${p.current.ds-p.target.ds}% (약 ${B(p.total*((p.current.ds-p.target.ds)/100))}원)</b></div>
+      <div style="font-size:12px;color:var(--tx3);">탐욕 구간 — 고점 분할 매도로 수익 실현.</div>
+    </div>
+    <div style="background:rgba(52,211,153,.07);border-radius:8px;padding:13px;border-left:3px solid var(--g);">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">${tag("buy")}<b style="color:var(--g);">채권 +2% · 해외주식 +2%</b></div>
+      <div style="font-size:12px;color:var(--tx3);">주식 차익을 채권·해외주식으로 분산. 금리 인하 수혜 기대.</div>
+    </div>`}
+    <button class="btn btn-g btn-w" style="margin-top:14px;" onclick="closeDrawer()">확인</button>
+  `);
+};
+
+/* ══════════════════════════════════════════════════════
+   PAGE: 주식
+══════════════════════════════════════════════════════ */
+function pageStocks(){
+  return `
+  <div class="sec-hd">
+    <div class="sec-title">📈 주식 포트폴리오</div>
+    <button class="btn btn-g btn-sm" data-fn="openAddStock">＋ 추가</button>
+  </div>
+  <div class="stamp" style="margin-bottom:12px;"><div class="pulse"></div>조회 ${DT(S.at)}</div>
+
+  ${S.stocks.map(s=>{
+    const pl=parseFloat(PL(s.avg,s.cur));
+    const val=s.qty*s.cur;
+    return `
+    <div class="card card-sm" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <div style="flex:1;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="font-weight:900;font-size:14px;">${esc(s.name)}</span>
+            <span class="dim" style="font-family:var(--mono);font-size:10px;">${s.ticker}</span>
+            ${tag(s.signal)}
+          </div>
+          <div style="display:flex;gap:14px;font-size:12px;">
+            <span style="color:var(--tx3);">수량 <b style="color:var(--tx);font-family:var(--mono);">${N(s.qty)}</b></span>
+            <span style="color:var(--tx3);">평균 <b style="color:var(--tx);font-family:var(--mono);">${N(s.avg)}</b></span>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-family:var(--mono);font-size:16px;font-weight:900;">${N(s.cur)}</div>
+          <div class="${pl>=0?"up":"dn"}" style="font-family:var(--mono);font-size:12px;font-weight:700;">${pl>=0?"+":""}${pl}%</div>
+          <div class="dim" style="font-size:10px;font-family:var(--mono);">${B(val)}</div>
+        </div>
+      </div>
+      <div class="prog"><div class="prog-f" style="width:${Math.min(Math.abs(pl),30)/30*100}%;background:${pl>=0?"var(--g)":"var(--r)"};"></div></div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button class="btn btn-g btn-xs" onclick="openEditStock(${s.id})">수정</button>
+        <button class="btn btn-rd btn-xs" onclick="delStock(${s.id})">삭제</button>
+      </div>
+    </div>`;}).join("")}
+  ${S.stocks.length===0?`<div class="empty"><div class="empty-ico">📊</div><div>보유 종목 없음</div></div>`:""}`;
+}
+
+window.openAddStock = function(){
+  openDrawer(`
+    <div class="dtitle">📈 종목 추가</div>
+    <div class="fg"><label class="fl">📅 매수일</label><input class="fi" type="date" id="s-dt" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">종목코드</label><input class="fi" type="text" id="s-tk" placeholder="005930"/></div>
+      <div class="fg"><label class="fl">종목명</label><input class="fi" type="text" id="s-nm" placeholder="삼성전자"/></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">수량</label><input class="fi" type="number" id="s-qty" placeholder="100"/></div>
+      <div class="fg"><label class="fl">평균단가</label><input class="fi" type="number" id="s-avg" placeholder="70000"/></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">현재가</label><input class="fi" type="number" id="s-cur" placeholder="75000"/></div>
+      <div class="fg"><label class="fl">시그널</label>
+        <select class="fs" id="s-sig">
+          <option value="buy">매수</option><option value="hold" selected>보유</option><option value="sell">매도</option><option value="watch">관망</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-p btn-w" onclick="saveStock()">저장</button>
+  `);
+};
+window.saveStock = function(){
+  const name=document.getElementById("s-nm").value.trim();
+  if(!name) return;
+  S.stocks.push({
+    id:Date.now(),
+    ticker:document.getElementById("s-tk").value,
+    name,
+    qty:Number(document.getElementById("s-qty").value)||0,
+    avg:Number(document.getElementById("s-avg").value)||0,
+    cur:Number(document.getElementById("s-cur").value)||0,
+    signal:document.getElementById("s-sig").value,
+  });
+  S.at=ts(); save(); closeDrawer(); renderPage();
+};
+window.delStock = id => { S.stocks=S.stocks.filter(x=>x.id!==id); S.at=ts(); save(); renderPage(); };
+window.openEditStock = function(id){
+  const s=S.stocks.find(x=>x.id===id); if(!s) return;
+  openDrawer(`
+    <div class="dtitle">✏️ ${esc(s.name)} 수정</div>
+    <div class="fg"><label class="fl">📅 수정일</label><input class="fi" type="date" id="e-dt" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">현재가</label><input class="fi" type="number" id="e-cur" value="${s.cur}"/></div>
+      <div class="fg"><label class="fl">수량</label><input class="fi" type="number" id="e-qty" value="${s.qty}"/></div>
+    </div>
+    <div class="fg"><label class="fl">시그널</label>
+      <select class="fs" id="e-sig">
+        <option value="buy" ${s.signal==="buy"?"selected":""}>매수</option>
+        <option value="hold" ${s.signal==="hold"?"selected":""}>보유</option>
+        <option value="sell" ${s.signal==="sell"?"selected":""}>매도</option>
+        <option value="watch" ${s.signal==="watch"?"selected":""}>관망</option>
+      </select>
+    </div>
+    <button class="btn btn-p btn-w" onclick="updateStock(${id})">저장</button>
+  `);
+};
+window.updateStock = function(id){
+  const s=S.stocks.find(x=>x.id===id); if(!s) return;
+  s.cur=Number(document.getElementById("e-cur").value)||s.cur;
+  s.qty=Number(document.getElementById("e-qty").value)||s.qty;
+  s.signal=document.getElementById("e-sig").value;
+  S.at=ts(); save(); closeDrawer(); renderPage();
+};
+
+/* ══════════════════════════════════════════════════════
+   PAGE: 자산 (부동산+차량+현금)
+══════════════════════════════════════════════════════ */
+let assetTab="re";
+function pageAssets(){
+  return `
+  <div class="sec-hd">
+    <div class="sec-title">🏠 자산 관리</div>
+    <button class="btn btn-g btn-sm" data-fn="openAddAsset">＋ 추가</button>
+  </div>
+  <div class="tabs-row">
+    <div class="tab-pill ${assetTab==="re"?"on":""}" onclick="setAssetTab('re')">🏠 부동산</div>
+    <div class="tab-pill ${assetTab==="vh"?"on":""}" onclick="setAssetTab('vh')">🚗 차량</div>
+    <div class="tab-pill ${assetTab==="cash"?"on":""}" onclick="setAssetTab('cash')">💵 현금</div>
+  </div>
+  <div id="asset-body">${renderAssetBody()}</div>`;
+}
+window.setAssetTab = t => { assetTab=t; const el=document.getElementById("asset-body"); if(el) el.innerHTML=renderAssetBody(); };
+
+function renderAssetBody(){
+  if(assetTab==="re") return S.realestate.map((r,i)=>{
+    const pl=parseFloat(PL(r.buy,r.cur));
+    return `<div class="card card-sm" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;">
+        <div style="flex:1;">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:3px;">
+            <b>${esc(r.name)}</b>
+            <span class="dim" style="font-size:10px;">${r.type}</span>
+            ${tag(r.signal)}
+          </div>
+          <div style="font-size:11px;color:var(--tx3);">취득 ${B(r.buy)} → 현재 ${B(r.cur)}</div>
+          <div style="font-size:11px;color:var(--tx3);">임대수익 <b class="up">${r.ryd}%</b></div>
+        </div>
+        <div style="text-align:right;">
+          <div class="${pl>=0?"up":"dn"}" style="font-size:17px;font-weight:900;font-family:var(--mono);">${pl>=0?"+":""}${pl}%</div>
+          <div class="dim" style="font-size:10px;font-family:var(--mono);">${B(r.cur-r.buy)}</div>
+          <button class="btn btn-rd btn-xs" style="margin-top:4px;" onclick="delRE(${r.id})">삭제</button>
+        </div>
+      </div>
+    </div>`}).join("")+
+    (S.realestate.length===0?`<div class="empty"><div class="empty-ico">🏠</div><div>부동산 없음</div></div>`:"");
+
+  if(assetTab==="vh") return S.vehicles.map(v=>{
+    const dep=parseFloat(PL(v.buy,v.cur));
+    const rat=((v.cur/v.buy)*100).toFixed(0);
+    return `<div class="card card-sm" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;">
+        <div style="flex:1;">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:3px;">
+            <b>${esc(v.name)}</b><span class="dim" style="font-size:10px;">${v.year}년</span>${tag(v.signal)}
+          </div>
+          <div style="font-size:11px;color:var(--tx3);">취득 ${B(v.buy)} → 현재 ${B(v.cur)}</div>
+          <div style="font-size:11px;color:var(--tx3);">주행 <b style="font-family:var(--mono);">${N(v.km)}km</b></div>
+        </div>
+        <div style="text-align:right;">
+          <div class="dn" style="font-size:17px;font-weight:900;font-family:var(--mono);">${dep}%</div>
+          <div class="dim" style="font-size:10px;">잔존 ${rat}%</div>
+          <button class="btn btn-rd btn-xs" style="margin-top:4px;" onclick="delVH(${v.id})">삭제</button>
+        </div>
+      </div>
+      <div class="prog"><div class="prog-f" style="width:${rat}%;background:linear-gradient(90deg,var(--r),var(--y));"></div></div>
+    </div>`}).join("")+
+    (S.vehicles.length===0?`<div class="empty"><div class="empty-ico">🚗</div><div>차량 없음</div></div>`:"");
+
+  return `<div class="card">
+    <div class="card-title">💵 현금·예금</div>
+    <div style="font-size:28px;font-weight:900;font-family:var(--mono);color:var(--acc2);margin-bottom:6px;">${B(S.cash||0)}원</div>
+    <div class="stamp" style="margin-bottom:14px;">📅 ${DF(S.at)}</div>
+    <div class="fg"><label class="fl">금액 수정 (원)</label><input class="fi" type="number" id="cash-inp" value="${S.cash||0}"/></div>
+    <div class="fg"><label class="fl">📅 기준 날짜</label><input class="fi" type="date" id="cash-date" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <button class="btn btn-p btn-w" onclick="saveCash()">저장</button>
+  </div>`;
+}
+window.saveCash = () => { S.cash=Number(document.getElementById("cash-inp").value)||0; S.at=ts(); save(); setAssetTab("cash"); };
+window.delRE = id => { S.realestate=S.realestate.filter(x=>x.id!==id); S.at=ts(); save(); renderPage(); };
+window.delVH = id => { S.vehicles=S.vehicles.filter(x=>x.id!==id); S.at=ts(); save(); renderPage(); };
+
+window.openAddAsset = function(){
+  const isRE = assetTab==="re";
+  const isVH = assetTab==="vh";
+  if(!isRE&&!isVH) return;
+  if(isRE) openDrawer(`
+    <div class="dtitle">🏠 부동산 추가</div>
+    <div class="fg"><label class="fl">📅 취득일</label><input class="fi" type="date" id="r-dt" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">유형</label><select class="fs" id="r-type"><option>아파트</option><option>오피스텔</option><option>빌라</option><option>상가</option><option>토지</option></select></div>
+      <div class="fg"><label class="fl">시그널</label><select class="fs" id="r-sig"><option value="buy">매수</option><option value="hold" selected>보유</option><option value="sell">매도</option><option value="watch">관망</option></select></div>
+    </div>
+    <div class="fg"><label class="fl">자산명</label><input class="fi" type="text" id="r-nm" placeholder="서울 강남구 아파트"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">취득가액 (원)</label><input class="fi" type="number" id="r-buy"/></div>
+      <div class="fg"><label class="fl">현재가액 (원)</label><input class="fi" type="number" id="r-cur"/></div>
+    </div>
+    <div class="fg"><label class="fl">임대수익률 (%)</label><input class="fi" type="number" step="0.1" id="r-ryd" placeholder="3.5"/></div>
+    <button class="btn btn-p btn-w" onclick="saveRE()">저장</button>
+  `);
+  else openDrawer(`
+    <div class="dtitle">🚗 차량 추가</div>
+    <div class="fg"><label class="fl">📅 취득일</label><input class="fi" type="date" id="v-dt" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <div class="fg"><label class="fl">차량명</label><input class="fi" type="text" id="v-nm" placeholder="BMW 5시리즈 530d"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">연식</label><input class="fi" type="number" id="v-yr" placeholder="2023"/></div>
+      <div class="fg"><label class="fl">주행거리(km)</label><input class="fi" type="number" id="v-km"/></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">취득가 (원)</label><input class="fi" type="number" id="v-buy"/></div>
+      <div class="fg"><label class="fl">현재시세 (원)</label><input class="fi" type="number" id="v-cur"/></div>
+    </div>
+    <button class="btn btn-p btn-w" onclick="saveVH()">저장</button>
+  `);
+};
+window.saveRE = () => {
+  const nm=document.getElementById("r-nm").value.trim(); if(!nm) return;
+  S.realestate.push({id:Date.now(),name:nm,type:document.getElementById("r-type").value,signal:document.getElementById("r-sig").value,buy:Number(document.getElementById("r-buy").value)||0,cur:Number(document.getElementById("r-cur").value)||0,ryd:Number(document.getElementById("r-ryd").value)||0});
+  S.at=ts(); save(); closeDrawer(); renderPage();
+};
+window.saveVH = () => {
+  const nm=document.getElementById("v-nm").value.trim(); if(!nm) return;
+  S.vehicles.push({id:Date.now(),name:nm,year:Number(document.getElementById("v-yr").value)||0,km:Number(document.getElementById("v-km").value)||0,buy:Number(document.getElementById("v-buy").value)||0,cur:Number(document.getElementById("v-cur").value)||0,signal:"hold"});
+  S.at=ts(); save(); closeDrawer(); renderPage();
+};
+
+/* ══════════════════════════════════════════════════════
+   PAGE: 입력 (사진+수동)
+══════════════════════════════════════════════════════ */
+let inputTab="photo";
+let photoFiles=[];
+
+function pageInput(){
+  return `
+  <div class="sec-title" style="margin-bottom:14px;">✏️ 자산 입력</div>
+  <div class="tabs-row">
+    <div class="tab-pill ${inputTab==="photo"?"on":""}" onclick="setInputTab('photo')">📷 사진 입력</div>
+    <div class="tab-pill ${inputTab==="manual"?"on":""}" onclick="setInputTab('manual')">✏️ 수동 입력</div>
+  </div>
+  <div id="input-body">${renderInputBody()}</div>`;
+}
+window.setInputTab = t => { inputTab=t; const el=document.getElementById("input-body"); if(el) el.innerHTML=renderInputBody(); bindPhotoEvents(); };
+
+function renderInputBody(){
+  if(inputTab==="photo") return `
+    <div class="card">
+      <div class="card-title">📷 사진으로 자동 입력</div>
+      <div style="font-size:12px;color:var(--tx3);margin-bottom:12px;line-height:1.6;">
+        💡 증권앱 잔고·연금명세서·부동산 시세·차량 시세표 사진을 찍으면 Claude AI가 자동 추출합니다
+      </div>
+      <div class="photo-drop" id="photo-drop" onclick="document.getElementById('photo-file').click()">
+        <input type="file" id="photo-file" accept="image/*" multiple style="display:none"/>
+        <div style="font-size:32px;margin-bottom:6px;">📷</div>
+        <div style="font-size:14px;font-weight:700;color:var(--tx2);">사진 업로드</div>
+        <div style="font-size:11px;color:var(--tx3);margin-top:3px;">잔고·명세서·시세표 등 최대 6장</div>
+      </div>
+      <div id="photo-preview"></div>
+      <div id="photo-actions"></div>
+      <div id="photo-result"></div>
+    </div>`;
+
+  return `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-title">😱 VIX 빠른 업데이트</div>
+      <div class="fg"><label class="fl">📅 기준 날짜</label><input class="fi" type="date" id="m-vdate" value="${new Date().toISOString().split("T")[0]}"/></div>
+      <div style="display:flex;gap:8px;">
+        <input class="fi" type="number" step="0.1" id="m-vix" placeholder="VIX 값 (예: 28.4)" style="flex:1;" value="${S.vix.value}"/>
+        <button class="btn btn-p" onclick="quickVix()">적용</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-title">💵 현금·예금 업데이트</div>
+      <div class="fg"><label class="fl">📅 기준 날짜</label><input class="fi" type="date" id="m-cdate" value="${new Date().toISOString().split("T")[0]}"/></div>
+      <div style="display:flex;gap:8px;">
+        <input class="fi" type="number" id="m-cash" value="${S.cash||0}" style="flex:1;"/>
+        <button class="btn btn-p" onclick="quickCash()">저장</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">💰 Claude API 비용 안내</div>
+      ${[
+        {m:"Haiku 4.5",i:"$1",o:"$5",p:"~$0.001",t:"대량 자동화"},
+        {m:"Sonnet 4.6 ★",i:"$3",o:"$15",p:"~$0.003",t:"사진 분석 권장"},
+        {m:"Opus 4.6",i:"$5",o:"$25",p:"~$0.008",t:"복잡한 분석"},
+      ].map((r,i)=>`<div style="padding:9px 0;border-bottom:${i<2?"1px solid rgba(80,140,255,.06)":"none"};background:${i===1?"rgba(79,128,255,.04)":"transparent"};">
+        <div style="display:flex;justify-content:space-between;">
+          <span style="font-size:12.5px;font-weight:${i===1?700:500};color:${i===1?"var(--acc2)":"var(--tx)"};">${r.m}</span>
+          <span class="up" style="font-family:var(--mono);font-size:13px;font-weight:700;">${r.p}</span>
+        </div>
+        <div style="font-size:10.5px;color:var(--tx3);">입력 ${r.i} / 출력 ${r.o} per MTok · ${r.t}</div>
+      </div>`).join("")}
+      <div style="margin-top:10px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:11px;color:var(--tx3);">
+        월 100회 사진 분석 ≈ <b style="color:var(--g);">$0.30 (약 420원)</b>
+      </div>
+    </div>`;
+}
+
+window.quickVix = () => {
+  const v=parseFloat(document.getElementById("m-vix").value); if(isNaN(v)||v<=0) return;
+  S.vix={...S.vix,prev:S.vix.value,value:v,hist:[...S.vix.hist.slice(1),v],at:ts()};
+  S.at=ts(); save(); alert(`VIX ${v} 저장 완료!`);
+};
+window.quickCash = () => {
+  S.cash=Number(document.getElementById("m-cash").value)||0; S.at=ts(); save(); alert("현금 저장 완료!");
+};
+
+function bindPhotoEvents(){
+  const fi=document.getElementById("photo-file");
+  const drop=document.getElementById("photo-drop");
+  if(!fi||!drop) return;
+  fi.addEventListener("change",e=>addPhotos(e.target.files));
+  drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("drag");});
+  drop.addEventListener("dragleave",()=>drop.classList.remove("drag"));
+  drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("drag");addPhotos(e.dataTransfer.files);});
+}
+
+function addPhotos(files){
+  photoFiles=[...photoFiles,...Array.from(files)].slice(0,6);
+  renderPhotoPreview();
+}
+
+function renderPhotoPreview(){
+  const prev=document.getElementById("photo-preview");
+  const acts=document.getElementById("photo-actions");
+  if(!prev) return;
+  if(photoFiles.length===0){prev.innerHTML="";if(acts)acts.innerHTML="";return;}
+  prev.innerHTML=`<div class="photo-grid">${photoFiles.map((f,i)=>`
+    <div class="photo-thumb"><img src="${URL.createObjectURL(f)}" alt=""/>
+      <button class="photo-del" onclick="removePhoto(${i})">✕</button>
+    </div>`).join("")}</div>`;
+  if(acts) acts.innerHTML=`<div style="display:flex;gap:8px;margin-top:10px;">
+    <button class="btn btn-p btn-w" onclick="analyzePhoto()">🤖 AI 자동 분석</button>
+    <button class="btn btn-g btn-xs" onclick="photoFiles=[];renderPhotoPreview()">초기화</button>
+  </div>`;
+}
+
+window.removePhoto = i => { photoFiles.splice(i,1); renderPhotoPreview(); };
+
+window.analyzePhoto = async function(){
+  if(!photoFiles.length) return;
+  const res=document.getElementById("photo-result");
+  if(res) res.innerHTML=`<div class="ai-box" style="display:flex;align-items:center;gap:8px;"><div class="spinner"></div><span>Claude AI 분석 중...</span></div>`;
+  try{
+    const b64=await new Promise((ok,fail)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(",")[1]);r.onerror=fail;r.readAsDataURL(photoFiles[0]);});
+    const mime=photoFiles[0].type||"image/jpeg";
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      model:"claude-sonnet-4-20250514",max_tokens:800,
+      messages:[{role:"user",content:[
+        {type:"image",source:{type:"base64",media_type:mime,data:b64}},
+        {type:"text",text:`금융 문서 이미지입니다. JSON만 출력:
+{"asset_type":"주식|연금|부동산|차량|예금|기타","asset_name":"자산명","amount":숫자,"date":"YYYY-MM-DD","details":"요약","items":[{"k":"항목","v":"값"}]}`}
+      ]}]
+    })});
+    const d=await resp.json();
+    const txt=d.content?.find(c=>c.type==="text")?.text||"{}";
+    let r; try{r=JSON.parse(txt.replace(/```json|```/g,"").trim());}catch{r={details:txt};}
+    if(res) res.innerHTML=`<div class="ai-box">
+      <div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:8px;">🤖 AI 분석 결과</div>
+      ${r.asset_type?`<div><b>유형:</b> ${esc(r.asset_type)}</div>`:""}
+      ${r.asset_name?`<div><b>자산:</b> ${esc(r.asset_name)}</div>`:""}
+      ${r.amount?`<div><b>금액:</b> <span style="font-family:var(--mono);">${N(r.amount)}원</span></div>`:""}
+      ${r.date?`<div><b>날짜:</b> ${esc(r.date)}</div>`:""}
+      ${r.details?`<div style="color:var(--tx3);margin-top:4px;">${esc(r.details)}</div>`:""}
+      ${(r.items||[]).map(it=>`<div style="display:flex;justify-content:space-between;font-size:11px;margin-top:2px;"><span style="color:var(--tx3);">${esc(it.k)}</span><span style="font-family:var(--mono);">${esc(it.v)}</span></div>`).join("")}
+    </div>`;
+  }catch(e){
+    if(res) res.innerHTML=`<div class="ai-box" style="color:var(--r);">API 오류 — 수동 입력해 주세요</div>`;
+  }
+};
+
+/* ══════════════════════════════════════════════════════
+   PAGE: 설정
+══════════════════════════════════════════════════════ */
+function pageSettings(){
+  return `
+  <div class="sec-title" style="margin-bottom:14px;">⚙️ 설정</div>
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title">📱 앱 설치 방법</div>
+    <div style="font-size:12.5px;color:var(--tx2);line-height:1.7;">
+      <b style="color:var(--acc2);">📱 아이폰 (Safari)</b><br>
+      1. Safari에서 이 파일 열기<br>
+      2. 하단 공유버튼(□↑) 탭<br>
+      3. "홈 화면에 추가" 탭<br>
+      4. "추가" → 앱처럼 설치 완료<br><br>
+      <b style="color:var(--acc2);">🤖 안드로이드 (Chrome)</b><br>
+      1. Chrome에서 이 파일 열기<br>
+      2. 주소창 오른쪽 ⋮ 메뉴<br>
+      3. "앱 설치" 또는 "홈화면 추가"<br>
+      4. 설치 완료<br><br>
+      <b style="color:var(--y);">💡 수정 방법</b><br>
+      index.html 파일을 메모장·VS Code로 열고<br>
+      DEFAULT 데이터나 로직 수정 → 저장 → 새로고침
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title">💾 저장 현황</div>
+    <div class="stat-row"><span class="stat-label">마지막 저장</span><span class="stat-val" style="font-size:12px;">${DF(S.at)}</span></div>
+    <div class="stat-row"><span class="stat-label">저장 위치</span><span class="stat-val" style="font-size:11px;">기기 로컬 (localStorage)</span></div>
+    <div class="stat-row"><span class="stat-label">보유 종목</span><span class="stat-val">${S.stocks.length}개</span></div>
+    <div class="stat-row"><span class="stat-label">연금 펀드</span><span class="stat-val">${S.pension.funds.length}개</span></div>
+    <div class="stat-row"><span class="stat-label">부동산</span><span class="stat-val">${S.realestate.length}건</span></div>
+    <div class="stat-row"><span class="stat-label">차량</span><span class="stat-val">${S.vehicles.length}대</span></div>
+  </div>
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title">📤 데이터 백업</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-gr" style="flex:1;" onclick="exportData()">📥 JSON 내보내기</button>
+      <button class="btn btn-g" style="flex:1;" onclick="document.getElementById('import-file').click()">📤 가져오기</button>
+    </div>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)"/>
+  </div>
+  <button class="btn btn-rd btn-w" onclick="if(confirm('전체 데이터를 초기화할까요?')){localStorage.removeItem('wo_data');location.reload();}">🗑️ 전체 초기화</button>
+  <div class="card" style="margin-top:12px;">
+    <div class="card-title">🔒 비밀번호 변경</div>
+    <div class="fg"><label class="fl">현재 비밀번호</label><input class="fi" type="password" id="pw-cur"/></div>
+    <div class="fg"><label class="fl">새 비밀번호 (4자 이상)</label><input class="fi" type="password" id="pw-new"/></div>
+    <div class="fg"><label class="fl">새 비밀번호 확인</label><input class="fi" type="password" id="pw-new2"/></div>
+    <button class="btn btn-p btn-w" onclick="changePw()">🔑 변경</button>
+    <div id="pw-msg" style="font-size:12px;text-align:center;margin-top:8px;min-height:16px;"></div>
+  </div>
+  <div style="height:20px;"></div>`;
+}
+
+window.exportData = () => {
+  const a=document.createElement("a");
+  a.href="data:application/json,"+encodeURIComponent(JSON.stringify(S,null,2));
+  a.download=`wealthos_${new Date().toISOString().split("T")[0]}.json`;
+  a.click();
+};
+window.importData = e => {
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{try{S=JSON.parse(ev.target.result);save();renderPage();alert("가져오기 완료!");}catch{alert("파일 오류");}};
+  r.readAsText(f);
+};
+
+/* ══════════════════════════════════════════════════════
+   시계 & 자동 갱신
+══════════════════════════════════════════════════════ */
+function updateClock(){
+  const el=document.getElementById("clock");
+  if(el) el.textContent=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
+}
+setInterval(updateClock,1000);
+setInterval(()=>{ S.at=ts(); save(); },60000);
+
+/* ══════════════════════════════════════════════════════
+   서비스 워커 (PWA 오프라인)
+══════════════════════════════════════════════════════ */
+if("serviceWorker" in navigator){
+  const swCode=`
+    self.addEventListener("install",e=>self.skipWaiting());
+    self.addEventListener("activate",e=>clients.claim());
+    self.addEventListener("fetch",e=>{
+      if(e.request.url.includes("anthropic.com")) return;
+      e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{
+        return caches.open("wo-v1").then(c=>{c.put(e.request,res.clone());return res;});
+      })));
+    });`;
+  const blob=new Blob([swCode],{type:"application/javascript"});
+  const swUrl=URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(()=>{});
+}
+
+/* ══════════════════════════════════════════════════════
+   초기화
+══════════════════════════════════════════════════════ */
+/* ════ 비밀번호 잠금 ════ */
+function _getPw(){ try{ return localStorage.getItem("wo_pw")||"01234"; }catch(e){ return "01234"; } }
+function _setPw(p){ try{ localStorage.setItem("wo_pw",p); }catch(e){} }
+
+function _showLock(){
+  var d=document.getElementById("scroll");
+  var tb=document.getElementById("tabbar");
+  var tp=document.getElementById("topbar");
+  // 앱 UI 숨기기
+  if(d)  d.style.visibility="hidden";
+  if(tb) tb.style.visibility="hidden";
+
+  // 잠금 오버레이 생성
+  var ov=document.createElement("div");
+  ov.id="__lk";
+  ov.style.cssText="position:fixed;inset:0;z-index:99999;background:#070d1a;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;font-family:sans-serif;";
+  ov.innerHTML=
+    '<div style="font-size:48px;margin-bottom:6px">📊</div>'+
+    '<div style="font-size:20px;font-weight:900;color:#7eb8ff;margin-bottom:2px">WealthOS</div>'+
+    '<div style="font-size:11px;color:#3a5070;margin-bottom:28px">통합 자산관리</div>'+
+    '<div style="width:100%;max-width:280px">'+
+      '<input id="__pi" type="password" placeholder="비밀번호 입력" maxlength="20"'+
+        ' style="width:100%;padding:14px;font-size:16px;background:#0d1828;color:#ddeeff;'+
+        'border:2px solid #4f80ff;border-radius:10px;text-align:center;outline:none;box-sizing:border-box;margin-bottom:10px"'+
+        ' onkeydown="if(event.key==='Enter')__lkOk()"/>'+
+      '<button onclick="__lkOk()" style="width:100%;padding:14px;background:#4f80ff;color:#fff;'+
+        'border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">잠금 해제</button>'+
+      '<div id="__pe" style="color:#f87171;text-align:center;font-size:12px;margin-top:8px;min-height:16px"></div>'+
+      '<div style="color:#3a5070;text-align:center;font-size:11px;margin-top:12px">초기 비밀번호: <b style="color:#7a99cc">01234</b></div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  setTimeout(function(){ var i=document.getElementById("__pi"); if(i) i.focus(); },200);
+}
+
+var __lkFail=0;
+function __lkOk(){
+  var i=document.getElementById("__pi");
+  var e=document.getElementById("__pe");
+  var v=(i?i.value:"").trim();
+  if(v===_getPw()){
+    var ov=document.getElementById("__lk");
+    if(ov) document.body.removeChild(ov);
+    var d=document.getElementById("scroll");
+    var tb=document.getElementById("tabbar");
+    if(d)  d.style.visibility="";
+    if(tb) tb.style.visibility="";
+    __lkFail=0;
+  } else {
+    __lkFail++;
+    if(i) i.value="";
+    if(e) e.textContent=__lkFail>=3?"잠시 후 재시도":"비밀번호 오류 ("+__lkFail+"/3)";
+  }
+}
+
+window.changePw=function(){
+  var c=document.getElementById("pw-cur");
+  var n=document.getElementById("pw-new");
+  var n2=document.getElementById("pw-new2");
+  var m=document.getElementById("pw-msg");
+  if(!c||!n||!n2||!m) return;
+  if(c.value!==_getPw()){ m.style.color="#f87171"; m.textContent="현재 비밀번호 오류"; return; }
+  if(n.value.length<4){  m.style.color="#f87171"; m.textContent="4자리 이상 입력"; return; }
+  if(n.value!==n2.value){ m.style.color="#f87171"; m.textContent="비밀번호 불일치"; return; }
+  _setPw(n.value);
+  m.style.color="#34d399"; m.textContent="✅ 변경 완료!";
+  setTimeout(function(){ c.value=""; n.value=""; n2.value=""; m.textContent=""; },2000);
+};
+
+updateClock();
+renderTabbar();
+renderPage();
+setTimeout(bindPhotoEvents, 100);
+_showLock();
+
+</script>
+</body>
+</html>

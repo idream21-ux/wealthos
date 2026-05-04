@@ -348,7 +348,14 @@ function renderTabbar(){
     </div>`).join("");
 }
 
-function goPage(p){ currentPage=p; renderTabbar(); renderPage(); window.scrollTo(0,0); document.getElementById("scroll").scrollTop=0; }
+function goPage(p){
+  currentPage=p;
+  renderTabbar();
+  renderPage();
+  window.scrollTo(0,0);
+  const sc = document.getElementById("scroll"); if(sc) sc.scrollTop=0;
+  if(p==="input") setTimeout(bindPhotoEvents, 50);
+}
 
 /* ── 7. 페이지 라우터 ────────────────────────────────── */
 function renderPage(){
@@ -917,44 +924,63 @@ window.saveVH = () => {
 /* ══════════════════════════════════════════════════════
    PAGE: 입력 (사진+수동)
 ══════════════════════════════════════════════════════ */
-let inputTab="photo";
+let inputTab="upload-stock";
 let photoFiles=[];
+let photoTarget="stock"; // "stock" | "pension"
+let lastAnalyzed=null;
 
 function pageInput(){
   return `
   <div class="sec-title" style="margin-bottom:14px;">✏️ 자산 입력</div>
   <div class="tabs-row">
-    <div class="tab-pill ${inputTab==="photo"?"on":""}" onclick="setInputTab('photo')">📷 사진 입력</div>
-    <div class="tab-pill ${inputTab==="manual"?"on":""}" onclick="setInputTab('manual')">✏️ 수동 입력</div>
+    <div class="tab-pill ${inputTab==="upload-stock"?"on":""}" onclick="setInputTab('upload-stock')">📈 주식 사진</div>
+    <div class="tab-pill ${inputTab==="upload-pension"?"on":""}" onclick="setInputTab('upload-pension')">🏦 연금 사진</div>
+    <div class="tab-pill ${inputTab==="manual"?"on":""}" onclick="setInputTab('manual')">✏️ 수동</div>
   </div>
   <div id="input-body">${renderInputBody()}</div>`;
 }
-window.setInputTab = t => { inputTab=t; const el=document.getElementById("input-body"); if(el) el.innerHTML=renderInputBody(); bindPhotoEvents(); };
+window.setInputTab = t => {
+  inputTab=t;
+  if(t==="upload-stock") photoTarget="stock";
+  else if(t==="upload-pension") photoTarget="pension";
+  photoFiles=[]; lastAnalyzed=null;
+  const el=document.getElementById("input-body"); if(el) el.innerHTML=renderInputBody();
+  setTimeout(bindPhotoEvents,50);
+};
 
 function renderInputBody(){
-  if(inputTab==="photo") return `
+  if(inputTab==="upload-stock" || inputTab==="upload-pension"){
+    const isStock = inputTab==="upload-stock";
+    const title = isStock ? "📈 주식 잔고 사진 업로드" : "🏦 연금 명세서 사진 업로드";
+    const desc = isStock
+      ? "💡 증권앱 보유종목 화면 / 잔고조회 화면 사진을 업로드하세요. 종목명·수량·평균단가·현재가를 자동 추출합니다."
+      : "💡 연금 계좌 명세서 / 펀드 평가 화면 사진을 업로드하세요. 펀드명·평가금액·수익률을 자동 추출합니다.";
+    return `
     <div class="card">
-      <div class="card-title">📷 사진으로 자동 입력</div>
-      <div style="font-size:12px;color:var(--tx3);margin-bottom:12px;line-height:1.6;">
-        💡 증권앱 잔고·연금명세서·부동산 시세·차량 시세표 사진을 찍으면 Claude AI가 자동 추출합니다
-      </div>
+      <div class="card-title">${title}</div>
+      <div style="font-size:12px;color:var(--tx3);margin-bottom:14px;line-height:1.6;">${desc}</div>
+
+      <div id="upload-status" style="margin-bottom:12px;"></div>
+
       <div class="photo-drop" id="photo-drop" onclick="document.getElementById('photo-file').click()">
-        <input type="file" id="photo-file" accept="image/*" multiple style="display:none"/>
+        <input type="file" id="photo-file" accept="image/*" multiple style="display:none;"/>
         <div style="font-size:32px;margin-bottom:6px;">📷</div>
-        <div style="font-size:14px;font-weight:700;color:var(--tx2);">사진 업로드</div>
-        <div style="font-size:11px;color:var(--tx3);margin-top:3px;">잔고·명세서·시세표 등 최대 6장</div>
+        <div style="font-size:14px;font-weight:700;color:var(--tx2);">탭하여 사진 선택</div>
+        <div style="font-size:11px;color:var(--tx3);margin-top:3px;">최대 6장</div>
       </div>
+
       <div id="photo-preview"></div>
       <div id="photo-actions"></div>
       <div id="photo-result"></div>
     </div>`;
+  }
 
   return `
     <div class="card" style="margin-bottom:12px;">
       <div class="card-title">😱 VIX 빠른 업데이트</div>
       <div class="fg"><label class="fl">📅 기준 날짜</label><input class="fi" type="date" id="m-vdate" value="${new Date().toISOString().split("T")[0]}"/></div>
       <div style="display:flex;gap:8px;">
-        <input class="fi" type="number" step="0.1" id="m-vix" placeholder="VIX 값 (예: 28.4)" style="flex:1;" value="${S.vix.value}"/>
+        <input class="fi" type="number" step="0.1" id="m-vix" placeholder="VIX 값" style="flex:1;" value="${S.vix.value}"/>
         <button class="btn btn-p" onclick="quickVix()">적용</button>
       </div>
     </div>
@@ -964,23 +990,6 @@ function renderInputBody(){
       <div style="display:flex;gap:8px;">
         <input class="fi" type="number" id="m-cash" value="${S.cash||0}" style="flex:1;"/>
         <button class="btn btn-p" onclick="quickCash()">저장</button>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">💰 Claude API 비용 안내</div>
-      ${[
-        {m:"Haiku 4.5",i:"$1",o:"$5",p:"~$0.001",t:"대량 자동화"},
-        {m:"Sonnet 4.6 ★",i:"$3",o:"$15",p:"~$0.003",t:"사진 분석 권장"},
-        {m:"Opus 4.6",i:"$5",o:"$25",p:"~$0.008",t:"복잡한 분석"},
-      ].map((r,i)=>`<div style="padding:9px 0;border-bottom:${i<2?"1px solid rgba(80,140,255,.06)":"none"};background:${i===1?"rgba(79,128,255,.04)":"transparent"};">
-        <div style="display:flex;justify-content:space-between;">
-          <span style="font-size:12.5px;font-weight:${i===1?700:500};color:${i===1?"var(--acc2)":"var(--tx)"};">${r.m}</span>
-          <span class="up" style="font-family:var(--mono);font-size:13px;font-weight:700;">${r.p}</span>
-        </div>
-        <div style="font-size:10.5px;color:var(--tx3);">입력 ${r.i} / 출력 ${r.o} per MTok · ${r.t}</div>
-      </div>`).join("")}
-      <div style="margin-top:10px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:11px;color:var(--tx3);">
-        월 100회 사진 분석 ≈ <b style="color:var(--g);">$0.30 (약 420원)</b>
       </div>
     </div>`;
 }
@@ -998,64 +1007,377 @@ function bindPhotoEvents(){
   const fi=document.getElementById("photo-file");
   const drop=document.getElementById("photo-drop");
   if(!fi||!drop) return;
-  fi.addEventListener("change",e=>addPhotos(e.target.files));
-  drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("drag");});
-  drop.addEventListener("dragleave",()=>drop.classList.remove("drag"));
-  drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("drag");addPhotos(e.dataTransfer.files);});
+  fi.onchange = e => {
+    addPhotos(e.target.files);
+    fi.value = ""; // 같은 파일 재선택 가능하게
+  };
+  drop.ondragover  = e => { e.preventDefault(); drop.classList.add("drag"); };
+  drop.ondragleave = () => drop.classList.remove("drag");
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("drag"); addPhotos(e.dataTransfer.files); };
 }
 
 function addPhotos(files){
+  if(!files || files.length===0) return;
+  const before = photoFiles.length;
   photoFiles=[...photoFiles,...Array.from(files)].slice(0,6);
+  const added = photoFiles.length - before;
+
+  // ── 업로드 확인 표시
+  const st = document.getElementById("upload-status");
+  if(st){
+    st.innerHTML = `
+      <div style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:18px;">✅</span>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:700;color:var(--g);">사진 ${added}장 업로드 완료</div>
+          <div style="font-size:11px;color:var(--tx3);margin-top:2px;">총 ${photoFiles.length}장 / 최대 6장</div>
+        </div>
+      </div>`;
+  }
   renderPhotoPreview();
 }
 
 function renderPhotoPreview(){
   const prev=document.getElementById("photo-preview");
   const acts=document.getElementById("photo-actions");
+  const res=document.getElementById("photo-result");
   if(!prev) return;
-  if(photoFiles.length===0){prev.innerHTML="";if(acts)acts.innerHTML="";return;}
-  prev.innerHTML=`<div class="photo-grid">${photoFiles.map((f,i)=>`
-    <div class="photo-thumb"><img src="${URL.createObjectURL(f)}" alt=""/>
-      <button class="photo-del" onclick="removePhoto(${i})">✕</button>
-    </div>`).join("")}</div>`;
-  if(acts) acts.innerHTML=`<div style="display:flex;gap:8px;margin-top:10px;">
-    <button class="btn btn-p btn-w" onclick="analyzePhoto()">🤖 AI 자동 분석</button>
-    <button class="btn btn-g btn-xs" onclick="photoFiles=[];renderPhotoPreview()">초기화</button>
-  </div>`;
+  if(photoFiles.length===0){
+    prev.innerHTML=""; if(acts) acts.innerHTML=""; if(res) res.innerHTML="";
+    const st=document.getElementById("upload-status"); if(st) st.innerHTML="";
+    return;
+  }
+  prev.innerHTML=`<div style="margin-top:12px;font-size:11px;color:var(--tx3);font-weight:700;">📸 업로드된 사진 (${photoFiles.length})</div>
+    <div class="photo-grid" style="margin-top:6px;">${photoFiles.map((f,i)=>`
+      <div class="photo-thumb">
+        <img src="${URL.createObjectURL(f)}" alt=""/>
+        <button class="photo-del" onclick="removePhoto(${i})">✕</button>
+      </div>`).join("")}</div>`;
+  if(acts) acts.innerHTML=`
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-p" style="flex:1;" onclick="analyzePhoto()">🤖 AI 자동 분석</button>
+      <button class="btn btn-g btn-sm" onclick="manualFromPhoto()">✏️ 수동 입력</button>
+      <button class="btn btn-rd btn-xs" onclick="photoFiles=[];lastAnalyzed=null;renderPhotoPreview();">초기화</button>
+    </div>`;
 }
 
-window.removePhoto = i => { photoFiles.splice(i,1); renderPhotoPreview(); };
-
-window.analyzePhoto = async function(){
-  if(!photoFiles.length) return;
-  const res=document.getElementById("photo-result");
-  if(res) res.innerHTML=`<div class="ai-box" style="display:flex;align-items:center;gap:8px;"><div class="spinner"></div><span>Claude AI 분석 중...</span></div>`;
-  try{
-    const b64=await new Promise((ok,fail)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(",")[1]);r.onerror=fail;r.readAsDataURL(photoFiles[0]);});
-    const mime=photoFiles[0].type||"image/jpeg";
-    const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-      model:"claude-sonnet-4-20250514",max_tokens:800,
-      messages:[{role:"user",content:[
-        {type:"image",source:{type:"base64",media_type:mime,data:b64}},
-        {type:"text",text:`금융 문서 이미지입니다. JSON만 출력:
-{"asset_type":"주식|연금|부동산|차량|예금|기타","asset_name":"자산명","amount":숫자,"date":"YYYY-MM-DD","details":"요약","items":[{"k":"항목","v":"값"}]}`}
-      ]}]
-    })});
-    const d=await resp.json();
-    const txt=d.content?.find(c=>c.type==="text")?.text||"{}";
-    let r; try{r=JSON.parse(txt.replace(/```json|```/g,"").trim());}catch{r={details:txt};}
-    if(res) res.innerHTML=`<div class="ai-box">
-      <div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:8px;">🤖 AI 분석 결과</div>
-      ${r.asset_type?`<div><b>유형:</b> ${esc(r.asset_type)}</div>`:""}
-      ${r.asset_name?`<div><b>자산:</b> ${esc(r.asset_name)}</div>`:""}
-      ${r.amount?`<div><b>금액:</b> <span style="font-family:var(--mono);">${N(r.amount)}원</span></div>`:""}
-      ${r.date?`<div><b>날짜:</b> ${esc(r.date)}</div>`:""}
-      ${r.details?`<div style="color:var(--tx3);margin-top:4px;">${esc(r.details)}</div>`:""}
-      ${(r.items||[]).map(it=>`<div style="display:flex;justify-content:space-between;font-size:11px;margin-top:2px;"><span style="color:var(--tx3);">${esc(it.k)}</span><span style="font-family:var(--mono);">${esc(it.v)}</span></div>`).join("")}
-    </div>`;
-  }catch(e){
-    if(res) res.innerHTML=`<div class="ai-box" style="color:var(--r);">API 오류 — 수동 입력해 주세요</div>`;
+window.removePhoto = i => {
+  photoFiles.splice(i,1);
+  if(photoFiles.length===0){
+    const st=document.getElementById("upload-status");
+    if(st) st.innerHTML="";
   }
+  renderPhotoPreview();
+};
+
+/* ── AI 분석 (CORS 우회: 분석 단계별 표시) ── */
+window.analyzePhoto = async function(){
+  if(!photoFiles.length){ alert("사진을 먼저 업로드하세요"); return; }
+
+  const res = document.getElementById("photo-result");
+  if(!res) return;
+
+  // 1단계: 분석 시작 알림
+  res.innerHTML = `
+    <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--acc);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div class="spinner"></div>
+        <span style="font-size:13px;font-weight:700;color:var(--acc2);">AI 분석 중...</span>
+      </div>
+      <div id="ai-step" style="font-size:11px;color:var(--tx3);">📤 이미지 인코딩 중...</div>
+    </div>`;
+
+  await new Promise(r=>setTimeout(r,400));
+
+  try {
+    // 이미지 base64 변환
+    const file = photoFiles[0];
+    const b64 = await new Promise((ok,fail)=>{
+      const r=new FileReader();
+      r.onload=()=>ok(r.result.split(",")[1]);
+      r.onerror=fail;
+      r.readAsDataURL(file);
+    });
+
+    const step = document.getElementById("ai-step");
+    if(step) step.textContent = "🤖 Claude API 호출 중...";
+
+    const mime = file.type || "image/jpeg";
+    const isStock = photoTarget === "stock";
+    const prompt = isStock
+      ? `이 이미지는 증권앱 잔고/보유종목 화면입니다. 보유한 종목들을 JSON으로 추출하세요. 종목코드를 알 수 있으면 ticker에 넣고, 모르면 빈 문자열. 다른 설명 없이 JSON 배열만 출력:
+[{"ticker":"종목코드","name":"종목명","qty":수량,"avg":평균단가,"cur":현재가}]`
+      : `이 이미지는 연금 계좌 명세서/펀드 평가 화면입니다. 보유한 펀드들을 JSON으로 추출하세요. 다른 설명 없이 JSON 배열만 출력:
+[{"name":"펀드명","type":"국내주식/해외주식/채권/대안","amount":평가금액,"ytd":수익률}]`;
+
+    let resp;
+    try {
+      const apiKey = (localStorage.getItem("wo_apikey")||"").trim();
+      if(!apiKey){
+        res.innerHTML = `
+          <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--y);">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span style="font-size:18px;">🔑</span>
+              <span style="font-size:13px;font-weight:700;color:var(--y);">API 키가 필요합니다</span>
+            </div>
+            <div style="font-size:12px;color:var(--tx3);line-height:1.7;margin-bottom:12px;">
+              ⚙ 설정 → API 키 등록에서 Anthropic API 키를 입력하세요.<br>
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--acc2);">console.anthropic.com</a> 에서 발급받을 수 있습니다.
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-p" style="flex:1;" onclick="goPage('settings')">⚙ 설정으로</button>
+              <button class="btn btn-g" onclick="manualFromPhoto()">✏️ 수동</button>
+            </div>
+          </div>`;
+        return;
+      }
+      resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1500,
+          messages:[{role:"user",content:[
+            {type:"image",source:{type:"base64",media_type:mime,data:b64}},
+            {type:"text",text:prompt}
+          ]}]
+        })
+      });
+    } catch(corsErr) {
+      // CORS 또는 네트워크 오류 — 수동 입력으로 안내
+      res.innerHTML = `
+        <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--y);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="font-size:18px;">⚠️</span>
+            <span style="font-size:13px;font-weight:700;color:var(--y);">자동 분석 사용 불가</span>
+          </div>
+          <div style="font-size:12px;color:var(--tx3);line-height:1.7;margin-bottom:12px;">
+            브라우저 보안 정책(CORS)으로 인해 GitHub Pages에서는 Claude API 직접 호출이 차단됩니다.<br><br>
+            <b style="color:var(--tx2);">해결 방법:</b><br>
+            ① 사진을 보면서 아래 <b>수동 입력</b> 버튼으로 직접 등록<br>
+            ② 또는 백엔드 서버를 별도 구축 (Vercel/Cloudflare Workers 등)
+          </div>
+          <button class="btn btn-p btn-w" onclick="manualFromPhoto()">✏️ 사진 보면서 수동 입력</button>
+        </div>`;
+      return;
+    }
+
+    if(step) step.textContent = "📊 결과 처리 중...";
+    const d = await resp.json();
+
+    if(d.error){
+      res.innerHTML = `
+        <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--r);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="font-size:18px;">❌</span>
+            <span style="font-size:13px;font-weight:700;color:var(--r);">API 오류</span>
+          </div>
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:12px;">${esc(d.error.message||"알 수 없는 오류")}</div>
+          <button class="btn btn-p btn-w" onclick="manualFromPhoto()">✏️ 수동 입력</button>
+        </div>`;
+      return;
+    }
+
+    const txt = d.content?.find(c=>c.type==="text")?.text || "[]";
+    let items;
+    try {
+      items = JSON.parse(txt.replace(/```json|```/g,"").trim());
+    } catch {
+      res.innerHTML = `
+        <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--y);">
+          <div style="font-weight:700;color:var(--y);margin-bottom:8px;">⚠️ 분석 결과 파싱 실패</div>
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:12px;">사진을 더 명확하게 다시 촬영하거나 수동 입력하세요.</div>
+          <button class="btn btn-p btn-w" onclick="manualFromPhoto()">✏️ 수동 입력</button>
+        </div>`;
+      return;
+    }
+
+    if(!Array.isArray(items) || items.length===0){
+      res.innerHTML = `
+        <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--y);">
+          <div style="font-weight:700;color:var(--y);margin-bottom:8px;">⚠️ 추출된 항목 없음</div>
+          <button class="btn btn-p btn-w" onclick="manualFromPhoto()">✏️ 수동 입력</button>
+        </div>`;
+      return;
+    }
+
+    lastAnalyzed = items;
+
+    // 분석 결과 + 각 항목별 저장 버튼 표시
+    res.innerHTML = `
+      <div class="ai-box" style="margin-top:14px;border:1px solid rgba(52,211,153,.3);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:20px;">✅</span>
+          <span style="font-size:14px;font-weight:700;color:var(--g);">분석 완료 — ${items.length}개 항목 추출</span>
+        </div>
+        ${items.map((it,i)=>renderAnalyzedItem(it,i,photoTarget)).join("")}
+        <button class="btn btn-p btn-w" style="margin-top:12px;" onclick="saveAllAnalyzed()">💾 모두 저장 (${items.length}개)</button>
+      </div>`;
+
+  } catch(e) {
+    res.innerHTML = `
+      <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--r);">
+        <div style="font-weight:700;color:var(--r);margin-bottom:8px;">❌ 오류</div>
+        <div style="font-size:11px;color:var(--tx3);margin-bottom:12px;">${esc(e.message||String(e))}</div>
+        <button class="btn btn-p btn-w" onclick="manualFromPhoto()">✏️ 수동 입력</button>
+      </div>`;
+  }
+};
+
+function renderAnalyzedItem(it, i, target){
+  if(target==="stock"){
+    const pl = it.avg && it.cur ? (((it.cur-it.avg)/it.avg)*100).toFixed(1) : "0";
+    return `
+    <div style="background:var(--s2);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <b style="font-size:13px;">${esc(it.name||"종목명 미확인")}</b>
+        <span style="font-size:10px;color:var(--tx3);font-family:var(--mono);">${esc(it.ticker||"")}</span>
+      </div>
+      <div style="display:flex;gap:10px;font-size:11px;color:var(--tx3);">
+        <span>수량: <b style="color:var(--tx);font-family:var(--mono);">${N(it.qty||0)}</b></span>
+        <span>평균: <b style="color:var(--tx);font-family:var(--mono);">${N(it.avg||0)}</b></span>
+        <span>현재: <b style="color:var(--tx);font-family:var(--mono);">${N(it.cur||0)}</b></span>
+        <span class="${pl>=0?"up":"dn"}" style="margin-left:auto;font-weight:700;">${pl>=0?"+":""}${pl}%</span>
+      </div>
+    </div>`;
+  } else {
+    return `
+    <div style="background:var(--s2);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <b style="font-size:13px;">${esc(it.name||"펀드명 미확인")}</b>
+        <span class="${(it.ytd||0)>=0?"up":"dn"}" style="font-size:11px;font-weight:700;font-family:var(--mono);">${(it.ytd||0)>=0?"+":""}${it.ytd||0}%</span>
+      </div>
+      <div style="display:flex;gap:10px;font-size:11px;color:var(--tx3);">
+        <span>유형: <b style="color:var(--tx);">${esc(it.type||"기타")}</b></span>
+        <span>금액: <b style="color:var(--tx);font-family:var(--mono);">${B(it.amount||0)}원</b></span>
+      </div>
+    </div>`;
+  }
+}
+
+window.saveAllAnalyzed = function(){
+  if(!lastAnalyzed || !lastAnalyzed.length){ alert("저장할 항목이 없습니다"); return; }
+
+  let count = 0;
+  if(photoTarget==="stock"){
+    lastAnalyzed.forEach(it=>{
+      if(!it.name) return;
+      S.stocks.push({
+        id:Date.now()+count,
+        ticker:it.ticker||"",
+        name:it.name,
+        qty:Number(it.qty)||0,
+        avg:Number(it.avg)||0,
+        cur:Number(it.cur)||Number(it.avg)||0,
+        signal:"hold"
+      });
+      count++;
+    });
+  } else {
+    lastAnalyzed.forEach(it=>{
+      if(!it.name) return;
+      S.pension.funds.push({
+        id:Date.now()+count,
+        name:it.name,
+        type:it.type||"기타",
+        amount:Number(it.amount)||0,
+        ytd:Number(it.ytd)||0,
+        signal:"hold"
+      });
+      count++;
+    });
+    S.pension.at = ts();
+  }
+
+  S.at = ts(); save();
+
+  const res = document.getElementById("photo-result");
+  if(res) res.innerHTML = `
+    <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--g);text-align:center;padding:20px;">
+      <div style="font-size:32px;margin-bottom:8px;">✅</div>
+      <div style="font-size:14px;font-weight:700;color:var(--g);margin-bottom:4px;">${count}개 항목 저장 완료!</div>
+      <div style="font-size:11px;color:var(--tx3);margin-bottom:14px;">localStorage에 저장됐습니다</div>
+      <button class="btn btn-p btn-w" onclick="goPage('${photoTarget==='stock'?'stocks':'pension'}')">📋 저장된 자산 확인 →</button>
+    </div>`;
+  photoFiles=[]; lastAnalyzed=null;
+  const st=document.getElementById("upload-status"); if(st) st.innerHTML="";
+  const pp=document.getElementById("photo-preview"); if(pp) pp.innerHTML="";
+  const pa=document.getElementById("photo-actions"); if(pa) pa.innerHTML="";
+};
+
+window.manualFromPhoto = function(){
+  if(photoTarget==="stock"){
+    openDrawer(`
+      <div class="dtitle">📈 주식 수동 추가 (사진 보면서)</div>
+      <div style="background:var(--s2);border-radius:8px;padding:10px;margin-bottom:14px;font-size:11px;color:var(--tx3);">
+        업로드한 사진 ${photoFiles.length}장을 참고하며 직접 입력하세요
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">종목코드</label><input class="fi" type="text" id="ms-tk" placeholder="005930"/></div>
+        <div class="fg"><label class="fl">종목명</label><input class="fi" type="text" id="ms-nm" placeholder="삼성전자"/></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">수량(주)</label><input class="fi" type="number" id="ms-qty"/></div>
+        <div class="fg"><label class="fl">평균단가</label><input class="fi" type="number" id="ms-avg"/></div>
+      </div>
+      <div class="fg"><label class="fl">현재가</label><input class="fi" type="number" id="ms-cur"/></div>
+      <button class="btn btn-p btn-w" onclick="saveManualStock()">💾 저장</button>
+    `);
+  } else {
+    openDrawer(`
+      <div class="dtitle">🏦 연금 수동 추가 (사진 보면서)</div>
+      <div style="background:var(--s2);border-radius:8px;padding:10px;margin-bottom:14px;font-size:11px;color:var(--tx3);">
+        업로드한 사진 ${photoFiles.length}장을 참고하며 직접 입력하세요
+      </div>
+      <div class="fg"><label class="fl">펀드명</label><input class="fi" type="text" id="mp-nm" placeholder="미래에셋 글로벌"/></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">유형</label>
+          <select class="fs" id="mp-type">
+            <option>국내주식</option><option>해외주식</option><option>채권</option><option>대안</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">YTD (%)</label><input class="fi" type="number" step="0.1" id="mp-ytd"/></div>
+      </div>
+      <div class="fg"><label class="fl">평가금액 (원)</label><input class="fi" type="number" id="mp-amt"/></div>
+      <button class="btn btn-p btn-w" onclick="saveManualPension()">💾 저장</button>
+    `);
+  }
+};
+
+window.saveManualStock = function(){
+  const nm=document.getElementById("ms-nm").value.trim(); if(!nm){ alert("종목명 필수"); return; }
+  S.stocks.push({
+    id:Date.now(),
+    ticker:document.getElementById("ms-tk").value.trim(),
+    name:nm,
+    qty:Number(document.getElementById("ms-qty").value)||0,
+    avg:Number(document.getElementById("ms-avg").value)||0,
+    cur:Number(document.getElementById("ms-cur").value)||0,
+    signal:"hold"
+  });
+  S.at=ts(); save(); closeDrawer();
+  alert("✅ 주식 저장 완료!");
+  goPage("stocks");
+};
+
+window.saveManualPension = function(){
+  const nm=document.getElementById("mp-nm").value.trim(); if(!nm){ alert("펀드명 필수"); return; }
+  S.pension.funds.push({
+    id:Date.now(),
+    name:nm,
+    type:document.getElementById("mp-type").value,
+    amount:Number(document.getElementById("mp-amt").value)||0,
+    ytd:Number(document.getElementById("mp-ytd").value)||0,
+    signal:"hold"
+  });
+  S.pension.at=ts(); S.at=ts(); save(); closeDrawer();
+  alert("✅ 연금 저장 완료!");
+  goPage("pension");
 };
 
 /* ══════════════════════════════════════════════════════
@@ -1100,6 +1422,27 @@ function pageSettings(){
     <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)"/>
   </div>
   <button class="btn btn-rd btn-w" onclick="if(confirm('전체 데이터를 초기화할까요?')){localStorage.removeItem('wo_data');location.reload();}">🗑️ 전체 초기화</button>
+  <div class="card" style="margin-top:12px;">
+    <div class="card-title">🔑 Claude API 키 등록</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">
+      AI 사진 분석 기능을 사용하려면 Anthropic API 키가 필요합니다.<br>
+      <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--acc2);">console.anthropic.com/settings/keys</a> 에서 발급
+    </div>
+    <div class="fg">
+      <label class="fl">API 키 (sk-ant-...)</label>
+      <input class="fi" type="password" id="api-key" placeholder="sk-ant-api03-..." value="${(localStorage.getItem('wo_apikey')||'').replace(/"/g,'&quot;')}"/>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-p" style="flex:1;" onclick="saveApiKey()">💾 저장</button>
+      <button class="btn btn-rd btn-sm" onclick="if(confirm('API 키를 삭제할까요?')){localStorage.removeItem('wo_apikey');alert('삭제됨');renderPage();}">🗑️</button>
+    </div>
+    <div id="api-key-msg" style="font-size:11px;text-align:center;margin-top:8px;min-height:14px;"></div>
+    <div style="margin-top:10px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:10px;color:var(--tx3);line-height:1.6;">
+      ⚠️ API 키는 이 기기 localStorage에만 저장되며 다른 곳으로 전송되지 않습니다.<br>
+      Claude Sonnet 사진 분석 1회 ≈ <b style="color:var(--g)">$0.003 (4원)</b>
+    </div>
+  </div>
+
   <div class="card" style="margin-top:12px;">
     <div class="card-title">🔒 비밀번호 변경</div>
     <div class="fg"><label class="fl">현재 비밀번호</label><input class="fi" type="password" id="pw-cur"/></div>
@@ -1204,6 +1547,16 @@ function _lockShow(){
   inp.addEventListener("keydown", function(e){ if(e.key === "Enter") check(); });
   setTimeout(function(){ inp.focus(); }, 200);
 }
+
+window.saveApiKey = function(){
+  const v = document.getElementById("api-key").value.trim();
+  const m = document.getElementById("api-key-msg");
+  if(!v){ m.style.color="#f87171"; m.textContent="API 키를 입력하세요"; return; }
+  if(!v.startsWith("sk-ant-")){ m.style.color="#f87171"; m.textContent="잘못된 형식 (sk-ant-... 로 시작해야 함)"; return; }
+  try{ localStorage.setItem("wo_apikey", v); }catch(e){}
+  m.style.color="#34d399"; m.textContent="✅ API 키 저장 완료!";
+  setTimeout(()=>{ m.textContent=""; }, 2000);
+};
 
 window.changePw = function(){
   var c = document.getElementById("pw-cur");

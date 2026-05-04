@@ -45,7 +45,7 @@
   --b1:rgba(80,140,255,.10);--b2:rgba(80,140,255,.22);
   --acc:#4f80ff;--acc2:#7eb8ff;
   --g:#34d399;--r:#f87171;--y:#fbbf24;--p:#a78bfa;
-  --tx:#ddeeff;--tx2:#7a99cc;--tx3:#3a5070;
+  --tx:#ddeeff;--tx2:#a0b8dc;--tx3:#7088aa;
   --nav:64px;--top:52px;
   --rad:12px;--rad-s:8px;
   --mono:'DM Mono',monospace;
@@ -532,6 +532,57 @@ function pageVix(){
       <span><span style="color:#fbbf24;">■</span> 채권</span>
       <span><span style="color:#7eb8ff;">■</span> 현금</span>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📊 공포지수(VIX) 산출 근거</div>
+    <div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+      <div style="font-size:13px;font-weight:700;color:var(--acc2);margin-bottom:8px;">📈 VIX란 무엇인가?</div>
+      <div style="font-size:12px;color:var(--tx2);line-height:1.7;">
+        시카고옵션거래소(CBOE)에서 산출하는 <b style="color:var(--tx);">S&P500 지수의 향후 30일간 변동성 예측치</b>입니다.<br>
+        ▸ S&P500 옵션 가격에서 역산한 변동성(Implied Volatility)<br>
+        ▸ <b style="color:var(--tx);">"공포 지수(Fear Index)"</b> 라는 별명으로 불립니다<br>
+        ▸ 변동성이 높을수록 시장 불안, 낮을수록 안정 의미
+      </div>
+    </div>
+
+    <div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+      <div style="font-size:13px;font-weight:700;color:var(--acc2);margin-bottom:8px;">🎯 구간별 의미 & 시장 심리</div>
+      ${[
+        {min:"<15", name:"극도 탐욕", color:"#00ffaa", mean:"시장 과열, 거품 우려. 조정 임박 가능성"},
+        {min:"15~20", name:"탐욕", color:"#34d399", mean:"안정적 상승장. 신중한 접근 필요"},
+        {min:"20~25", name:"중립", color:"#fbbf24", mean:"평균적 변동. 정상적 시장 상태"},
+        {min:"25~35", name:"공포", color:"#fb923c", mean:"불안 확대, 매수 기회 출현 시작"},
+        {min:">35", name:"극도 공포", color:"#ff4444", mean:"공황 매도, 역사적 매수 적기"},
+      ].map(z=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--b1);">
+        <div style="width:14px;height:14px;border-radius:3px;background:${z.color};flex-shrink:0;"></div>
+        <div style="width:60px;font-size:11px;font-family:var(--mono);color:var(--tx2);">${z.min}</div>
+        <div style="font-size:12px;font-weight:700;color:${z.color};width:60px;">${z.name}</div>
+        <div style="font-size:11px;color:var(--tx2);flex:1;">${z.mean}</div>
+      </div>`).join("")}
+    </div>
+
+    <div style="background:var(--s2);border-radius:8px;padding:12px 14px;">
+      <div style="font-size:13px;font-weight:700;color:var(--acc2);margin-bottom:8px;">⚖️ 역사적 극값 사례</div>
+      ${[
+        {date:"2020.03", val:82, ev:"코로나 팬데믹"},
+        {date:"2008.10", val:80, ev:"글로벌 금융위기"},
+        {date:"2018.02", val:50, ev:"VIX 쇼크"},
+        {date:"2022.09", val:33, ev:"인플레이션 우려"},
+        {date:"2026.05 (현재)", val:S.vix.value, ev:"현재 시점"},
+      ].map(h=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--b1);">
+        <div style="width:90px;font-size:11px;color:var(--tx2);font-family:var(--mono);">${h.date}</div>
+        <div style="width:50px;font-size:13px;font-weight:700;font-family:var(--mono);color:${GZ(h.val).col};">${h.val}</div>
+        <div style="font-size:11px;color:var(--tx2);flex:1;">${h.ev}</div>
+      </div>`).join("")}
+    </div>
+
+    <div style="margin-top:10px;padding:10px;background:rgba(79,128,255,.08);border-radius:8px;font-size:11px;color:#aabbdd;line-height:1.7;">
+      💡 <b>활용 전략</b>: 공포 구간(25↑)에서 분할 매수 시작, 극도 공포(35↑)에서 적극 매수.<br>
+      탐욕 구간(15~20)에서는 차익 실현 비중 확대, 극도 탐욕(15↓)에서는 현금 비중 30%+ 권장.
+    </div>
   </div>`;
 }
 
@@ -615,23 +666,84 @@ function pagePension(){
   <div class="card">
     <div class="card-title">📋 연금 펀드</div>
     ${p.funds.map((f,i)=>`
-    <div style="display:flex;align-items:center;padding:10px 0;border-bottom:${i<p.funds.length-1?"1px solid rgba(80,140,255,.06)":"none"};">
-      <div style="flex:1;">
-        <div style="font-size:13px;font-weight:700;">${esc(f.name)}</div>
-        <div style="font-size:11px;color:var(--tx3);">${f.type} · ${B(f.amount)}원</div>
+    <div style="padding:10px 0;border-bottom:${i<p.funds.length-1?"1px solid rgba(80,140,255,.06)":"none"};">
+      <div style="display:flex;align-items:center;margin-bottom:6px;">
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:700;">${esc(f.name)}</div>
+          <div style="font-size:11px;color:var(--tx2);">${f.type} · <b style="color:var(--g);">${B(f.amount)}원</b></div>
+        </div>
+        <div style="text-align:right;margin-right:8px;">
+          <div style="font-family:var(--mono);font-size:13px;font-weight:700;" class="${f.ytd>=0?"up":"dn"}">${f.ytd>=0?"+":""}${f.ytd}%</div>
+          ${tag(f.signal)}
+        </div>
       </div>
-      <div style="text-align:right;margin-right:10px;">
-        <div style="font-family:var(--mono);font-size:13px;font-weight:700;" class="${f.ytd>=0?"up":"dn"}">${f.ytd>=0?"+":""}${f.ytd}%</div>
-        ${tag(f.signal)}
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-g btn-xs" style="flex:1;" onclick="editFund(${f.id})">✏️ 수정</button>
+        <button class="btn btn-rd btn-xs" style="flex:1;" onclick="delFund(${f.id})">🗑️ 삭제</button>
       </div>
-      <button class="btn btn-rd btn-xs" onclick="delFund(${f.id})">삭제</button>
     </div>`).join("")}
   </div>`;
 }
 
 window.delFund = id => {
   S.pension.funds = S.pension.funds.filter(f=>f.id!==id);
+  S.pension.total = S.pension.funds.reduce((a,f)=>a+(Number(f.amount)||0), 0);
   S.pension.at = ts(); S.at = ts(); save(); renderPage();
+};
+
+window.editFund = id => {
+  const f = S.pension.funds.find(x=>x.id===id);
+  if(!f) return;
+  openDrawer(`
+    <div class="dtitle">✏️ 펀드 수정</div>
+    <div class="fg"><label class="fl">펀드명</label>
+      <input class="fi" type="text" id="ef-name" value="${esc(f.name).replace(/"/g,'&quot;')}"/>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">유형</label>
+        <select class="fs" id="ef-type">
+          <option ${f.type==="국내주식"?"selected":""}>국내주식</option>
+          <option ${f.type==="해외주식"?"selected":""}>해외주식</option>
+          <option ${f.type==="채권"?"selected":""}>채권</option>
+          <option ${f.type==="대안"?"selected":""}>대안</option>
+          <option ${f.type==="원리금보장"?"selected":""}>원리금보장</option>
+          <option ${f.type==="기타"?"selected":""}>기타</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">시그널</label>
+        <select class="fs" id="ef-signal">
+          <option value="buy" ${f.signal==="buy"?"selected":""}>매수</option>
+          <option value="hold" ${f.signal==="hold"?"selected":""}>보유</option>
+          <option value="sell" ${f.signal==="sell"?"selected":""}>매도</option>
+          <option value="watch" ${f.signal==="watch"?"selected":""}>관망</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">평가금액 (원)</label>
+      <input class="fi" type="number" id="ef-amount" value="${f.amount||0}"/>
+      <div style="font-size:10px;color:var(--y);margin-top:3px;">⚠️ 평가손익 아닌 평가금액!</div>
+    </div>
+    <div class="fg">
+      <label class="fl">수익률 (%)</label>
+      <input class="fi" type="number" step="0.01" id="ef-ytd" value="${f.ytd||0}"/>
+    </div>
+    <button class="btn btn-p btn-w" onclick="saveEditFund(${id})">💾 저장</button>
+  `);
+};
+
+window.saveEditFund = id => {
+  const f = S.pension.funds.find(x=>x.id===id);
+  if(!f) return;
+  f.name = document.getElementById("ef-name").value.trim() || f.name;
+  f.type = document.getElementById("ef-type").value;
+  f.signal = document.getElementById("ef-signal").value;
+  f.amount = Number(document.getElementById("ef-amount").value)||0;
+  f.ytd = Number(document.getElementById("ef-ytd").value)||0;
+  S.pension.total = S.pension.funds.reduce((a,f)=>a+(Number(f.amount)||0), 0);
+  S.pension.at = ts(); S.at = ts(); save();
+  closeDrawer();
+  renderPage();
 };
 
 window.openAddFund = function(){
@@ -846,9 +958,17 @@ window.updateStock = function(id){
 ══════════════════════════════════════════════════════ */
 let assetTab="re";
 function pageAssets(){
-  const reTotal  = S.realestate.reduce((a,r)=>a+(Number(r.cur)||0), 0);
-  const reCost   = S.realestate.reduce((a,r)=>a+(Number(r.buy)||0), 0);
-  const rePL     = reTotal - reCost;
+  // 자가/임대중: 평가가치 / 전세·월세: 보증금만
+  const reOwned = S.realestate.filter(r=>!r.ownership || r.ownership==="자가" || r.ownership==="임대중");
+  const reRent  = S.realestate.filter(r=>r.ownership==="전세" || r.ownership==="월세");
+  const reTotal = reOwned.reduce((a,r)=>a+(Number(r.cur)||0), 0) + reRent.reduce((a,r)=>a+(Number(r.deposit)||0), 0);
+  const reCost  = reOwned.reduce((a,r)=>a+(Number(r.buy)||0), 0);
+  const rePL    = reOwned.reduce((a,r)=>a+(Number(r.cur)||0)-(Number(r.buy)||0), 0);
+  const monthlyTotal = S.realestate.reduce((a,r)=>{
+    if(r.ownership==="임대중") return a + (Number(r.monthlyRent)||0);
+    if(r.ownership==="월세")   return a - (Number(r.monthlyRent)||0);
+    return a;
+  }, 0);
   const vhTotal  = S.vehicles.reduce((a,v)=>a+(Number(v.cur)||0), 0);
   const vhCost   = S.vehicles.reduce((a,v)=>a+(Number(v.buy)||0), 0);
   const vhDep    = vhTotal - vhCost;
@@ -868,9 +988,10 @@ function pageAssets(){
 
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
     <div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px;border-top:2px solid var(--g);">
-      <div style="font-size:9.5px;color:var(--tx3);margin-bottom:3px;">🏠 부동산</div>
+      <div style="font-size:9.5px;color:var(--tx2);margin-bottom:3px;">🏠 부동산</div>
       <div style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--g);">${B(reTotal)}</div>
-      <div style="font-size:9px;color:var(--tx3);margin-top:2px;">손익 <span class="${rePL>=0?"up":"dn"}">${rePL>=0?"+":""}${B(rePL)}</span></div>
+      <div style="font-size:9px;color:var(--tx2);margin-top:2px;">자가 ${reOwned.length} · 임차 ${reRent.length}</div>
+      ${monthlyTotal!==0?`<div style="font-size:9px;color:${monthlyTotal>0?"var(--g)":"var(--r)"};margin-top:1px;">월 ${monthlyTotal>0?"+":""}${B(monthlyTotal)}</div>`:""}
     </div>
     <div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px;border-top:2px solid var(--p);">
       <div style="font-size:9.5px;color:var(--tx3);margin-bottom:3px;">🚗 차량</div>
@@ -894,23 +1015,39 @@ window.setAssetTab = t => { assetTab=t; const el=document.getElementById("asset-
 
 function renderAssetBody(){
   if(assetTab==="re") return S.realestate.map((r,i)=>{
-    const pl=parseFloat(PL(r.buy,r.cur));
+    const pl = parseFloat(PL(r.buy||0, r.cur||0));
+    const own = r.ownership || "자가";
+    const ownColor = {"자가":"#34d399","전세":"#7eb8ff","월세":"#fbbf24","임대중":"#a78bfa"}[own] || "#7a99cc";
+    const isOwned = own==="자가" || own==="임대중";
     return `<div class="card card-sm" style="margin-bottom:10px;">
-      <div style="display:flex;align-items:flex-start;">
+      <div style="display:flex;align-items:flex-start;margin-bottom:8px;">
         <div style="flex:1;">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:3px;">
-            <b>${esc(r.name)}</b>
-            <span class="dim" style="font-size:10px;">${r.type}</span>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">
+            <b style="font-size:13px;">${esc(r.name)}</b>
+            <span style="background:${ownColor}22;color:${ownColor};border:1px solid ${ownColor}44;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700;">${own}</span>
+            <span style="font-size:10px;color:var(--tx2);">${r.type||"기타"}</span>
             ${tag(r.signal)}
           </div>
-          <div style="font-size:11px;color:var(--tx3);">취득 ${B(r.buy)} → 현재 ${B(r.cur)}</div>
-          <div style="font-size:11px;color:var(--tx3);">임대수익 <b class="up">${r.ryd}%</b></div>
+          ${isOwned ? `
+            <div style="font-size:11px;color:var(--tx2);">취득 ${B(r.buy)}원 → 현재 ${B(r.cur)}원</div>
+            ${own==="임대중" && r.deposit ? `<div style="font-size:11px;color:var(--tx2);">임대 보증금 ${B(r.deposit)}원${r.monthlyRent?` · 월세 ${B(r.monthlyRent)}원`:""}</div>` : ""}
+            <div style="font-size:11px;color:var(--tx2);">임대수익률 <span style="color:var(--g);font-weight:700;">${r.ryd||0}%</span></div>
+          ` : own==="전세" ? `
+            <div style="font-size:11px;color:var(--tx2);">전세 보증금 <b style="color:var(--acc2);">${B(r.deposit||0)}원</b></div>
+            <div style="font-size:11px;color:var(--tx2);">계약기간 ${r.contractStart||"-"} ~ ${r.contractEnd||"-"}</div>
+          ` : `
+            <div style="font-size:11px;color:var(--tx2);">월세 보증금 <b style="color:var(--acc2);">${B(r.deposit||0)}원</b></div>
+            <div style="font-size:11px;color:var(--tx2);">월세 <b style="color:var(--y);">${B(r.monthlyRent||0)}원</b></div>
+          `}
         </div>
-        <div style="text-align:right;">
+        ${isOwned ? `<div style="text-align:right;">
           <div class="${pl>=0?"up":"dn"}" style="font-size:17px;font-weight:900;font-family:var(--mono);">${pl>=0?"+":""}${pl}%</div>
-          <div class="dim" style="font-size:10px;font-family:var(--mono);">${B(r.cur-r.buy)}</div>
-          <button class="btn btn-rd btn-xs" style="margin-top:4px;" onclick="delRE(${r.id})">삭제</button>
-        </div>
+          <div style="font-size:10px;font-family:var(--mono);color:var(--tx2);">${pl>=0?"+":""}${B((r.cur||0)-(r.buy||0))}</div>
+        </div>` : ""}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-g btn-xs" style="flex:1;" onclick="editRE(${r.id})">✏️ 수정</button>
+        <button class="btn btn-rd btn-xs" style="flex:1;" onclick="delRE(${r.id})">🗑️ 삭제</button>
       </div>
     </div>`}).join("")+
     (S.realestate.length===0?`<div class="empty"><div class="empty-ico">🏠</div><div>부동산 없음</div></div>`:"");
@@ -956,22 +1093,50 @@ window.openAddAsset = function(){
   if(!isRE&&!isVH) return;
   if(isRE) openDrawer(`
     <div class="dtitle">🏠 부동산 추가</div>
-    <div class="fg"><label class="fl">📅 취득일</label><input class="fi" type="date" id="r-dt" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <div class="fg">
+      <label class="fl">소유 형태</label>
+      <select class="fs" id="r-own" onchange="window.toggleREForm()">
+        <option value="자가">🏠 자가 (소유)</option>
+        <option value="임대중">📤 임대 내준 부동산</option>
+        <option value="전세">📥 전세 거주</option>
+        <option value="월세">📥 월세 거주</option>
+      </select>
+    </div>
     <div class="fr">
       <div class="fg"><label class="fl">유형</label><select class="fs" id="r-type"><option>아파트</option><option>오피스텔</option><option>빌라</option><option>상가</option><option>토지</option></select></div>
       <div class="fg"><label class="fl">시그널</label><select class="fs" id="r-sig"><option value="buy">매수</option><option value="hold" selected>보유</option><option value="sell">매도</option><option value="watch">관망</option></select></div>
     </div>
-    <div class="fg"><label class="fl">자산명</label><input class="fi" type="text" id="r-nm" placeholder="서울 강남구 아파트"/></div>
-    <div class="fr">
-      <div class="fg"><label class="fl">취득가액 (원)</label><input class="fi" type="number" id="r-buy"/></div>
-      <div class="fg"><label class="fl">현재가액 (원)</label><input class="fi" type="number" id="r-cur"/></div>
+    <div class="fg"><label class="fl">자산명/주소</label><input class="fi" type="text" id="r-nm" placeholder="서울 강남구 아파트"/></div>
+    <div class="fg"><label class="fl">📅 취득일/입주일</label>${dateInputHtml("r-dt", new Date().toISOString().split("T")[0])}</div>
+
+    <div id="re-owned-fields">
+      <div class="fr">
+        <div class="fg"><label class="fl">취득가액 (원)</label><input class="fi" type="number" id="r-buy"/></div>
+        <div class="fg"><label class="fl">현재가액 (원)</label><input class="fi" type="number" id="r-cur"/></div>
+      </div>
+      <div class="fg"><label class="fl">임대수익률 (%)</label><input class="fi" type="number" step="0.1" id="r-ryd" placeholder="3.5"/></div>
     </div>
-    <div class="fg"><label class="fl">임대수익률 (%)</label><input class="fi" type="number" step="0.1" id="r-ryd" placeholder="3.5"/></div>
+
+    <div id="re-rent-fields" style="display:none;">
+      <div class="fg">
+        <label class="fl">보증금 (원)</label>
+        <input class="fi" type="number" id="r-deposit" placeholder="예: 30000000"/>
+      </div>
+      <div class="fg" id="re-monthly-wrap" style="display:none;">
+        <label class="fl">월세 (원)</label>
+        <input class="fi" type="number" id="r-monthly" placeholder="예: 1500000"/>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">계약 시작</label>${dateInputHtml("r-cstart", new Date().toISOString().split("T")[0])}</div>
+        <div class="fg"><label class="fl">계약 종료</label>${dateInputHtml("r-cend", "")}</div>
+      </div>
+    </div>
+
     <button class="btn btn-p btn-w" onclick="saveRE()">저장</button>
   `);
   else openDrawer(`
     <div class="dtitle">🚗 차량 추가</div>
-    <div class="fg"><label class="fl">📅 취득일</label><input class="fi" type="date" id="v-dt" value="${new Date().toISOString().split("T")[0]}"/></div>
+    <div class="fg"><label class="fl">📅 취득일</label>${dateInputHtml("v-dt", new Date().toISOString().split("T")[0])}</div>
     <div class="fg"><label class="fl">차량명</label><input class="fi" type="text" id="v-nm" placeholder="BMW 5시리즈 530d"/></div>
     <div class="fr">
       <div class="fg"><label class="fl">연식</label><input class="fi" type="number" id="v-yr" placeholder="2023"/></div>
@@ -984,14 +1149,108 @@ window.openAddAsset = function(){
     <button class="btn btn-p btn-w" onclick="saveVH()">저장</button>
   `);
 };
+window.toggleREForm = function(){
+  const own = document.getElementById("r-own").value;
+  const ownedDiv = document.getElementById("re-owned-fields");
+  const rentDiv = document.getElementById("re-rent-fields");
+  const monthlyWrap = document.getElementById("re-monthly-wrap");
+
+  if(own==="자가" || own==="임대중"){
+    ownedDiv.style.display = "";
+    rentDiv.style.display = own==="임대중" ? "" : "none";
+    if(monthlyWrap) monthlyWrap.style.display = own==="임대중" ? "" : "none";
+  } else {
+    ownedDiv.style.display = "none";
+    rentDiv.style.display = "";
+    if(monthlyWrap) monthlyWrap.style.display = own==="월세" ? "" : "none";
+  }
+};
+
 window.saveRE = () => {
-  const nm=document.getElementById("r-nm").value.trim(); if(!nm) return;
-  S.realestate.push({id:Date.now(),name:nm,type:document.getElementById("r-type").value,signal:document.getElementById("r-sig").value,buy:Number(document.getElementById("r-buy").value)||0,cur:Number(document.getElementById("r-cur").value)||0,ryd:Number(document.getElementById("r-ryd").value)||0});
-  S.at=ts(); save(); closeDrawer(); renderPage();
+  const nm = document.getElementById("r-nm").value.trim();
+  if(!nm){ alert("자산명을 입력하세요"); return; }
+  const own = document.getElementById("r-own").value;
+  const item = {
+    id: Date.now(),
+    name: nm,
+    type: document.getElementById("r-type").value,
+    signal: document.getElementById("r-sig").value,
+    ownership: own,
+    purchaseDate: getDateValue("r-dt"),
+  };
+  if(own==="자가" || own==="임대중"){
+    item.buy = Number(document.getElementById("r-buy").value)||0;
+    item.cur = Number(document.getElementById("r-cur").value)||0;
+    item.ryd = Number(document.getElementById("r-ryd").value)||0;
+  }
+  if(own==="임대중" || own==="전세" || own==="월세"){
+    item.deposit = Number(document.getElementById("r-deposit").value)||0;
+    item.contractStart = getDateValue("r-cstart");
+    item.contractEnd = getDateValue("r-cend");
+  }
+  if(own==="월세" || own==="임대중"){
+    const m = document.getElementById("r-monthly");
+    item.monthlyRent = m ? (Number(m.value)||0) : 0;
+  }
+  S.realestate.push(item);
+  S.at = ts(); save(); closeDrawer(); renderPage();
+};
+
+window.editRE = id => {
+  const r = S.realestate.find(x=>x.id===id);
+  if(!r) return;
+  const own = r.ownership || "자가";
+  openDrawer(`
+    <div class="dtitle">✏️ 부동산 수정</div>
+    <div class="fg"><label class="fl">자산명</label>
+      <input class="fi" type="text" id="er-nm" value="${esc(r.name).replace(/"/g,'&quot;')}"/>
+    </div>
+    <div class="fg">
+      <label class="fl">소유 형태</label>
+      <select class="fs" id="er-own">
+        <option ${own==="자가"?"selected":""} value="자가">🏠 자가</option>
+        <option ${own==="임대중"?"selected":""} value="임대중">📤 임대 내준 부동산</option>
+        <option ${own==="전세"?"selected":""} value="전세">📥 전세 거주</option>
+        <option ${own==="월세"?"selected":""} value="월세">📥 월세 거주</option>
+      </select>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">취득가/현재가 (원)</label><input class="fi" type="number" id="er-buy" value="${r.buy||0}" placeholder="취득가"/></div>
+      <div class="fg"><label class="fl">현재가 (원)</label><input class="fi" type="number" id="er-cur" value="${r.cur||0}"/></div>
+    </div>
+    <div class="fg"><label class="fl">보증금 (전세/월세시)</label><input class="fi" type="number" id="er-deposit" value="${r.deposit||0}"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">월세 (원)</label><input class="fi" type="number" id="er-monthly" value="${r.monthlyRent||0}"/></div>
+      <div class="fg"><label class="fl">임대수익률 (%)</label><input class="fi" type="number" step="0.1" id="er-ryd" value="${r.ryd||0}"/></div>
+    </div>
+    <button class="btn btn-p btn-w" onclick="saveEditRE(${id})">💾 저장</button>
+  `);
+};
+
+window.saveEditRE = id => {
+  const r = S.realestate.find(x=>x.id===id);
+  if(!r) return;
+  r.name = document.getElementById("er-nm").value.trim() || r.name;
+  r.ownership = document.getElementById("er-own").value;
+  r.buy = Number(document.getElementById("er-buy").value)||0;
+  r.cur = Number(document.getElementById("er-cur").value)||0;
+  r.deposit = Number(document.getElementById("er-deposit").value)||0;
+  r.monthlyRent = Number(document.getElementById("er-monthly").value)||0;
+  r.ryd = Number(document.getElementById("er-ryd").value)||0;
+  S.at = ts(); save(); closeDrawer(); renderPage();
 };
 window.saveVH = () => {
   const nm=document.getElementById("v-nm").value.trim(); if(!nm) return;
-  S.vehicles.push({id:Date.now(),name:nm,year:Number(document.getElementById("v-yr").value)||0,km:Number(document.getElementById("v-km").value)||0,buy:Number(document.getElementById("v-buy").value)||0,cur:Number(document.getElementById("v-cur").value)||0,signal:"hold"});
+  S.vehicles.push({
+    id:Date.now(),
+    name:nm,
+    year:Number(document.getElementById("v-yr").value)||0,
+    km:Number(document.getElementById("v-km").value)||0,
+    buy:Number(document.getElementById("v-buy").value)||0,
+    cur:Number(document.getElementById("v-cur").value)||0,
+    purchaseDate: getDateValue("v-dt"),
+    signal:"hold"
+  });
   S.at=ts(); save(); closeDrawer(); renderPage();
 };
 
@@ -999,6 +1258,45 @@ window.saveVH = () => {
    PAGE: 입력 (사진+수동)
 ══════════════════════════════════════════════════════ */
 let inputTab="upload-stock";
+
+// 날짜 입력 헬퍼: 빠른 연/월 선택 + 텍스트 입력
+function dateInputHtml(id, defaultVal){
+  const d = defaultVal ? new Date(defaultVal) : new Date();
+  const yr = d.getFullYear();
+  const mo = String(d.getMonth()+1).padStart(2,"0");
+  const dy = String(d.getDate()).padStart(2,"0");
+  const yearOpts = [];
+  const curYear = new Date().getFullYear();
+  for(let y=curYear+5; y>=curYear-50; y--) yearOpts.push(y);
+  return `
+    <div class="date-picker" data-id="${id}">
+      <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:5px;margin-bottom:5px;">
+        <select class="fs" id="${id}-y" onchange="updateDate('${id}')" style="padding:9px 8px;font-size:13px;">
+          ${yearOpts.map(y=>`<option value="${y}" ${y==yr?"selected":""}>${y}년</option>`).join("")}
+        </select>
+        <select class="fs" id="${id}-m" onchange="updateDate('${id}')" style="padding:9px 8px;font-size:13px;">
+          ${Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${String(m).padStart(2,"0")}" ${String(m).padStart(2,"0")==mo?"selected":""}>${m}월</option>`).join("")}
+        </select>
+        <select class="fs" id="${id}-d" onchange="updateDate('${id}')" style="padding:9px 8px;font-size:13px;">
+          ${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${String(d).padStart(2,"0")}" ${String(d).padStart(2,"0")==dy?"selected":""}>${d}일</option>`).join("")}
+        </select>
+      </div>
+      <input class="fi" type="text" id="${id}" value="${defaultVal||""}" placeholder="YYYY-MM-DD" style="font-family:var(--mono);font-size:13px;text-align:center;"/>
+    </div>`;
+}
+
+window.updateDate = function(id){
+  const y = document.getElementById(id+"-y").value;
+  const m = document.getElementById(id+"-m").value;
+  const d = document.getElementById(id+"-d").value;
+  const inp = document.getElementById(id);
+  if(inp) inp.value = `${y}-${m}-${d}`;
+};
+
+window.getDateValue = function(id){
+  const inp = document.getElementById(id);
+  return inp ? inp.value : "";
+};
 let photoFiles=[];
 let photoTarget="stock"; // "stock" | "pension"
 let lastAnalyzed=null;
@@ -1007,16 +1305,15 @@ function pageInput(){
   return `
   <div class="sec-title" style="margin-bottom:14px;">✏️ 자산 입력</div>
   <div class="tabs-row">
-    <div class="tab-pill ${inputTab==="upload-stock"?"on":""}" onclick="setInputTab('upload-stock')">📈 주식 사진</div>
-    <div class="tab-pill ${inputTab==="upload-pension"?"on":""}" onclick="setInputTab('upload-pension')">🏦 연금 사진</div>
-    <div class="tab-pill ${inputTab==="manual"?"on":""}" onclick="setInputTab('manual')">✏️ 수동</div>
+    <div class="tab-pill ${inputTab==="upload-stock"?"on":""}" onclick="setInputTab('upload-stock')">📈 주식 (다중 계좌)</div>
+    <div class="tab-pill ${inputTab==="upload-pension"?"on":""}" onclick="setInputTab('upload-pension')">🏦 연금 (다중 계좌)</div>
   </div>
   <div id="input-body">${renderInputBody()}</div>`;
 }
 window.setInputTab = t => {
-  inputTab=t;
-  if(t==="upload-stock") photoTarget="stock";
-  else if(t==="upload-pension") photoTarget="pension";
+  if(t!=="upload-stock" && t!=="upload-pension") t = "upload-stock";
+  inputTab = t;
+  photoTarget = (t==="upload-stock") ? "stock" : "pension";
   photoFiles=[]; lastAnalyzed=null;
   const el=document.getElementById("input-body"); if(el) el.innerHTML=renderInputBody();
   setTimeout(bindPhotoEvents,50);
@@ -1027,8 +1324,8 @@ function renderInputBody(){
     const isStock = inputTab==="upload-stock";
     const title = isStock ? "📈 주식 잔고 사진 업로드" : "🏦 연금 명세서 사진 업로드";
     const desc = isStock
-      ? "💡 증권앱 보유종목 화면 / 잔고조회 화면 사진을 업로드하세요. 종목명·수량·평균단가·현재가를 자동 추출합니다."
-      : "💡 연금 계좌 명세서 / 펀드 평가 화면 사진을 업로드하세요. 펀드명·평가금액·수익률을 자동 추출합니다.";
+      ? "💡 증권사 여러 곳/계좌 여러 개 사진을 한번에 업로드하세요 (최대 6장). AI가 모든 사진을 통합 분석하여 종목별로 추출합니다.<br><br><b style='color:var(--y);'>⚠️ 평가손익이 아닌 보유수량·현재가를 추출합니다.</b>"
+      : "💡 퇴직연금/IRP 계좌 명세서 사진을 한번에 업로드하세요 (최대 6장). 여러 계좌의 펀드를 통합 분석합니다.<br><br><b style='color:var(--y);'>⚠️ 평가손익이 아닌 평가금액을 추출합니다.</b>";
     return `
     <div class="card">
       <div class="card-title">${title}</div>
@@ -1049,36 +1346,7 @@ function renderInputBody(){
     </div>`;
   }
 
-  return `
-    <div class="card" style="margin-bottom:12px;">
-      <div class="card-title">😱 VIX 빠른 업데이트</div>
-      <div class="fg">
-        <label class="fl">📅 기준 날짜 (수동 입력 가능)</label>
-        <div style="display:flex;gap:6px;">
-          <input class="fi" type="date" id="m-vdate" value="${new Date().toISOString().split("T")[0]}" style="flex:1;"/>
-          <input class="fi" type="text" id="m-vdate-txt" placeholder="2026-05-04" style="flex:1;font-family:var(--mono);"/>
-        </div>
-        <div style="font-size:10px;color:var(--tx3);margin-top:4px;">달력 또는 직접 텍스트 입력 (YYYY-MM-DD)</div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <input class="fi" type="number" step="0.1" id="m-vix" placeholder="VIX 값" style="flex:1;" value="${S.vix.value}"/>
-        <button class="btn btn-p" onclick="quickVix()">적용</button>
-      </div>
-    </div>
-    <div class="card" style="margin-bottom:12px;">
-      <div class="card-title">💵 현금·예금 업데이트</div>
-      <div class="fg">
-        <label class="fl">📅 기준 날짜 (수동 입력 가능)</label>
-        <div style="display:flex;gap:6px;">
-          <input class="fi" type="date" id="m-cdate" value="${new Date().toISOString().split("T")[0]}" style="flex:1;"/>
-          <input class="fi" type="text" id="m-cdate-txt" placeholder="2026-05-04" style="flex:1;font-family:var(--mono);"/>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <input class="fi" type="number" id="m-cash" value="${S.cash||0}" style="flex:1;"/>
-        <button class="btn btn-p" onclick="quickCash()">저장</button>
-      </div>
-    </div>`;
+  return "";  // 수동 탭 제거됨
 }
 
 window.quickVix = () => {
@@ -1164,68 +1432,88 @@ window.analyzePhoto = async function(){
   const res = document.getElementById("photo-result");
   if(!res) return;
 
-  // 1단계: 분석 시작 알림
   res.innerHTML = `
     <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--acc);">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <div class="spinner"></div>
-        <span style="font-size:13px;font-weight:700;color:var(--acc2);">AI 분석 중...</span>
+        <span style="font-size:13px;font-weight:700;color:var(--acc2);">AI 분석 중... (${photoFiles.length}장 처리)</span>
       </div>
-      <div id="ai-step" style="font-size:11px;color:var(--tx3);">📤 이미지 인코딩 중...</div>
+      <div id="ai-step" style="font-size:11px;color:var(--tx2);">📤 이미지 인코딩 중...</div>
     </div>`;
 
   await new Promise(r=>setTimeout(r,400));
 
   try {
-    // 이미지 base64 변환
-    const file = photoFiles[0];
-    const b64 = await new Promise((ok,fail)=>{
-      const r=new FileReader();
-      r.onload=()=>ok(r.result.split(",")[1]);
-      r.onerror=fail;
-      r.readAsDataURL(file);
-    });
-
+    // 모든 사진을 base64로 변환
     const step = document.getElementById("ai-step");
-    if(step) step.textContent = "🤖 Claude API 호출 중...";
+    if(step) step.textContent = `📤 ${photoFiles.length}장 인코딩 중...`;
 
-    const mime = file.type || "image/jpeg";
+    const allImages = [];
+    for(let i=0; i<photoFiles.length; i++){
+      const file = photoFiles[i];
+      const b64 = await new Promise((ok,fail)=>{
+        const r=new FileReader();
+        r.onload=()=>ok(r.result.split(",")[1]);
+        r.onerror=fail;
+        r.readAsDataURL(file);
+      });
+      allImages.push({mime: file.type||"image/jpeg", data: b64});
+      if(step) step.textContent = `📤 인코딩 중... (${i+1}/${photoFiles.length})`;
+    }
+
+    if(step) step.textContent = `🤖 Claude API 호출 중... (${photoFiles.length}장 통합 분석)`;
+
     const isStock = photoTarget === "stock";
     const prompt = isStock
-      ? `이 이미지는 증권앱 잔고/보유종목 화면입니다.
-보유한 모든 종목을 JSON 배열로 추출하세요.
+      ? `여러 장의 증권사/증권앱 잔고 화면을 분석합니다. 각 사진은 서로 다른 계좌일 수 있습니다.
+모든 이미지에서 보유한 모든 종목을 빠짐없이 JSON 배열로 추출하세요.
 
-⚠️ 각 필드 정의 (절대 혼동 금지):
-- qty (보유수량) = 보유 주식수. 보통 1~수천 사이의 작은 정수
-  ⛔ 평가금액(원)을 절대 qty로 넣지 마세요
-- avg (평균단가) = 1주당 매입 평균 가격 (원)
-- cur (현재가) = 1주당 현재 가격 (원)
+⚠️ 컬럼 식별 규칙 (한국 증권앱 기준):
+화면에는 보통 다음 컬럼들이 있습니다:
+- "종목명" 또는 "Name"
+- "보유수량" 또는 "잔고수량" 또는 "수량" → qty (작은 정수, 보통 1~수만)
+- "평균단가" 또는 "매입가" 또는 "평단" → avg
+- "현재가" 또는 "체결가" → cur
+- "평가금액" 또는 "평가액" → 참고용 (qty × cur)
+- "평가손익" 또는 "손익" → ⛔ qty/avg/cur과 절대 혼동 금지! 빨간/파란 색으로 표시되는 손익금액
+- "수익률" 또는 "%" → 참고용
 
-만약 화면에 "수량" 컬럼이 없고 "평가금액"만 있다면:
-qty = 평가금액 / 현재가 (계산해서 정수로)
-
-예시: 평가금액 1,000,000원 / 현재가 50,000원 → qty: 20
+⚠️ 절대 혼동 금지:
+- "평가손익"은 결과값이며 절대 qty/avg/cur 어디에도 넣지 마세요
+- qty는 작은 정수(1~수만). 100만 이상이면 거의 확실히 평가금액을 잘못 넣은 것
+- 컬럼명을 정확히 보고 추출. 색상이 빨간색/파란색인 숫자는 보통 손익이므로 무시
 
 검증 규칙:
-- qty * cur 이 평가금액과 거의 일치해야 함
-- qty가 100만 이상이면 거의 확실히 잘못된 값
-- avg, cur 는 보통 1,000원 ~ 1,000,000원 사이
+- qty * cur ≈ 평가금액 이어야 함
+- avg, cur 는 보통 100원 ~ 100만원 사이
+- qty는 보통 1주 ~ 수만주 사이
+
+여러 사진에 같은 종목이 있으면 별도 항목으로 추출 (계좌별로 분리).
 
 다른 설명 없이 JSON 배열만 출력:
-[{"ticker":"종목코드(없으면 빈문자열)","name":"종목명","qty":보유수량(작은 숫자),"avg":평균단가,"cur":현재가}]`
-      : `이 이미지는 연금/퇴직연금 계좌 명세서, 펀드/ETF 평가 화면입니다.
-보유한 모든 종목/펀드를 JSON 배열로 추출하세요.
+[{"ticker":"종목코드(없으면 빈문자열)","name":"종목명","qty":보유수량(작은 정수),"avg":평균단가,"cur":현재가,"account":"계좌구분(있으면)"}]`
+      : `여러 장의 연금/퇴직연금 계좌 명세서를 분석합니다. 각 사진은 서로 다른 계좌일 수 있습니다.
+모든 보유 종목/펀드를 JSON 배열로 빠짐없이 추출하세요.
 
-⚠️ 매우 중요한 구분 (혼동 금지):
-- "평가금액" 또는 "평가액" = 현재 자산의 총 가치 → amount에 넣을 값
-- "평가손익" = 수익이나 손실 금액 → amount에 넣지 마세요
-- "수익률" 또는 "%" = ytd 필드에 넣을 값
+⚠️ 한국 퇴직연금 화면 컬럼 식별:
+- "평가금액" 또는 "평가액" = 현재 자산 총 가치 → amount에 넣을 값
+- "평가손익" 또는 "손익" = 수익/손실 금액 (빨간/파란색) → ⛔ amount에 절대 넣지 말것
+- "수익률" 또는 "%" = ytd 필드
+- "납입금액" / "매입금액" = 원금 (참고용)
 
-예시: 평가금액 14,938,880원 / 평가손익 7,254,445원 / 수익률 94.40% 인 경우
-→ {"name":"KODEX AI전력핵심설비", "amount": 14938880, "ytd": 94.40}
+예시: 화면에 "평가금액 14,938,880원 / 평가손익 +7,254,445원 / 수익률 +94.40%"
+→ {"name":"KODEX AI전력", "amount": 14938880, "ytd": 94.40}
+→ ⛔ 절대 amount에 7,254,445를 넣지 마세요
 
-다른 설명 없이 JSON 배열만 출력. 모든 종목을 빠짐없이 추출하세요:
-[{"name":"종목/펀드명","type":"국내주식|해외주식|채권|대안","amount":평가금액(절대 평가손익 아님),"ytd":수익률퍼센트}]`;
+ETF/펀드 자산유형 분류:
+- KODEX/TIGER/RISE 등 한국 ETF → "국내주식"
+- KODEX 미국/TIGER 미국/SPY/QQQ 등 → "해외주식"
+- 채권/국고채/회사채 → "채권"
+- 정기예금/원리금보장상품 → "원리금보장"
+- 리츠/REITs/원자재 → "대안"
+
+다른 설명 없이 JSON 배열만 출력. 모든 종목 빠짐없이:
+[{"name":"종목/펀드명","type":"국내주식|해외주식|채권|대안|원리금보장","amount":평가금액(절대 평가손익 아님),"ytd":수익률퍼센트}]`;
 
     let resp;
     try {
@@ -1248,6 +1536,10 @@ qty = 평가금액 / 현재가 (계산해서 정수로)
           </div>`;
         return;
       }
+      const imageContent = allImages.map(img => ({
+        type:"image",
+        source:{type:"base64", media_type:img.mime, data:img.data}
+      }));
       resp = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
         headers:{
@@ -1258,9 +1550,9 @@ qty = 평가금액 / 현재가 (계산해서 정수로)
         },
         body: JSON.stringify({
           model:"claude-sonnet-4-20250514",
-          max_tokens:1500,
+          max_tokens:3000,
           messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:mime,data:b64}},
+            ...imageContent,
             {type:"text",text:prompt}
           ]}]
         })

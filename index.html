@@ -239,66 +239,6 @@ html,body{
 </head>
 <body>
 
-<!-- ════ 잠금화면 ════ -->
-<div id="LS" style="position:fixed;inset:0;z-index:9999;background:#070d1a;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;font-family:sans-serif;">
-  <div style="font-size:52px;margin-bottom:8px;">📊</div>
-  <div style="font-size:22px;font-weight:900;color:#7eb8ff;margin-bottom:4px;">WealthOS</div>
-  <div style="font-size:12px;color:#3a5070;margin-bottom:36px;text-align:center;">통합 자산관리 · 개인 보안 잠금</div>
-  <div style="width:100%;max-width:320px;background:#0d1828;border:2px solid rgba(80,140,255,.4);border-radius:16px;padding:24px 20px;">
-    <div style="font-size:12px;font-weight:700;color:#7a99cc;margin-bottom:10px;">🔒 비밀번호 입력</div>
-    <input id="LI" type="password" inputmode="numeric" placeholder="비밀번호를 입력하세요" maxlength="20"
-      style="width:100%;background:#111e33;border:2px solid rgba(80,140,255,.4);border-radius:8px;padding:14px;font-size:18px;color:#ddeeff;text-align:center;outline:none;box-sizing:border-box;"
-      onkeydown="if(event.key==='Enter')LK()"/>
-    <button id="LB" onclick="LK()" style="width:100%;margin-top:12px;padding:14px;background:#4f80ff;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;">잠금 해제</button>
-    <div id="LE" style="font-size:12px;color:#f87171;text-align:center;margin-top:10px;min-height:18px;"></div>
-    <div style="font-size:11px;color:#3a5070;text-align:center;margin-top:14px;line-height:1.8;">초기 비밀번호 : <b style="color:#7a99cc;">01234</b><br>⚙ 설정에서 변경 가능</div>
-  </div>
-</div>
-
-<script>
-var _LF=0;
-function LK(){
-  var v=(document.getElementById("LI").value||"").trim();
-  var s="01234";
-  try{s=localStorage.getItem("wo_pw")||"01234";}catch(e){}
-  var e=document.getElementById("LE");
-  if(v===s){
-    document.getElementById("LS").style.display="none";
-    _LF=0; e.textContent="";
-  } else {
-    _LF++;
-    document.getElementById("LI").value="";
-    if(_LF>=3){
-      e.textContent="5초 후 재시도";
-      var b=document.getElementById("LB");
-      b.disabled=true;b.style.opacity="0.4";
-      setTimeout(function(){b.disabled=false;b.style.opacity="1";_LF=0;e.textContent="";},5000);
-    } else {
-      e.textContent="비밀번호 오류 ("+_LF+"/3)";
-    }
-  }
-}
-window.changePw=function(){
-  var c=document.getElementById("pw-cur").value;
-  var n=document.getElementById("pw-new").value;
-  var n2=document.getElementById("pw-new2").value;
-  var m=document.getElementById("pw-msg");
-  var s="01234";try{s=localStorage.getItem("wo_pw")||"01234";}catch(e){}
-  if(!c||c!==s){m.style.color="#f87171";m.textContent="현재 비밀번호 오류";return;}
-  if(!n||n.length<4){m.style.color="#f87171";m.textContent="4자리 이상 입력";return;}
-  if(n!==n2){m.style.color="#f87171";m.textContent="비밀번호 불일치";return;}
-  try{localStorage.setItem("wo_pw",n);}catch(e){}
-  m.style.color="#34d399";m.textContent="✅ 변경 완료!";
-  setTimeout(function(){
-    document.getElementById("pw-cur").value="";
-    document.getElementById("pw-new").value="";
-    document.getElementById("pw-new2").value="";
-    m.textContent="";
-  },2000);
-};
-setTimeout(function(){document.getElementById("LI").focus();},300);
-</script>
-
 <div id="app">
   <div id="topbar">
     <div class="logo">📊 WealthOS</div>
@@ -1497,6 +1437,93 @@ if("serviceWorker" in navigator){
 /* ══════════════════════════════════════════════════════
    초기화
 ══════════════════════════════════════════════════════ */
+
+/* ════ 비밀번호 잠금 ════ */
+(function(){
+  /* 잠금화면 HTML을 body 맨 앞에 동적 생성 */
+  var overlay = document.createElement("div");
+  overlay.id = "LOCK";
+  overlay.innerHTML = [
+    '<div style="font-size:52px;margin-bottom:8px">📊</div>',
+    '<div style="font-size:22px;font-weight:900;color:#7eb8ff;margin-bottom:4px">WealthOS</div>',
+    '<div style="font-size:12px;color:#3a5070;margin-bottom:32px;text-align:center">통합 자산관리 · 개인 보안 잠금</div>',
+    '<div style="width:100%;max-width:300px;background:#0d1828;border:2px solid rgba(80,140,255,.4);border-radius:16px;padding:24px 20px">',
+      '<div style="font-size:12px;font-weight:700;color:#7a99cc;margin-bottom:10px">🔒 비밀번호 입력</div>',
+      '<input id="LI" type="password" inputmode="numeric" placeholder="비밀번호" maxlength="20"',
+        'style="width:100%;background:#111e33;border:2px solid rgba(80,140,255,.4);border-radius:8px;',
+        'padding:14px;font-size:18px;color:#ddeeff;text-align:center;outline:none;box-sizing:border-box"',
+        'onkeydown="if(event.key==='Enter')LKCK()"/>',
+      '<button id="LB" onclick="LKCK()" style="width:100%;margin-top:12px;padding:14px;',
+        'background:#4f80ff;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">',
+        '잠금 해제</button>',
+      '<div id="LE" style="font-size:12px;color:#f87171;text-align:center;margin-top:10px;min-height:18px"></div>',
+      '<div style="font-size:11px;color:#3a5070;text-align:center;margin-top:14px;line-height:1.8">',
+        '초기 비밀번호 : <b style="color:#7a99cc">01234</b><br>⚙ 설정 → 비밀번호 변경',
+      '</div>',
+    '</div>'
+  ].join("");
+  Object.assign(overlay.style, {
+    position:"fixed", inset:"0", zIndex:"9999",
+    background:"#070d1a",
+    display:"flex", flexDirection:"column",
+    alignItems:"center", justifyContent:"center",
+    padding:"32px 20px", fontFamily:"sans-serif"
+  });
+  document.body.insertBefore(overlay, document.body.firstChild);
+  setTimeout(function(){ var i=document.getElementById("LI"); if(i) i.focus(); }, 400);
+})();
+
+var _LF = 0;
+function LKCK(){
+  var inp = document.getElementById("LI");
+  var v = inp ? (inp.value||"").trim() : "";
+  var err = document.getElementById("LE");
+  var s = "01234";
+  try{ s = localStorage.getItem("wo_pw") || "01234"; } catch(e){}
+  if(v === s){
+    var ov = document.getElementById("LOCK");
+    if(ov) ov.parentNode.removeChild(ov);
+    _LF = 0;
+  } else {
+    _LF++;
+    if(inp){ inp.value=""; inp.focus(); }
+    if(_LF >= 3){
+      if(err) err.textContent = "5초 후 재시도";
+      var b = document.getElementById("LB");
+      if(b){ b.disabled=true; b.style.opacity="0.4"; }
+      setTimeout(function(){
+        if(b){ b.disabled=false; b.style.opacity="1"; }
+        _LF=0;
+        if(err) err.textContent="";
+      }, 5000);
+    } else {
+      if(err) err.textContent = "비밀번호 오류 ("+_LF+"/3)";
+    }
+  }
+}
+
+window.changePw = function(){
+  var c  = document.getElementById("pw-cur");
+  var n  = document.getElementById("pw-new");
+  var n2 = document.getElementById("pw-new2");
+  var m  = document.getElementById("pw-msg");
+  if(!c||!n||!n2||!m) return;
+  var s="01234"; try{s=localStorage.getItem("wo_pw")||"01234";}catch(e){}
+  if(!c.value || c.value !== s){
+    m.style.color="#f87171"; m.textContent="현재 비밀번호가 틀렸습니다"; return;
+  }
+  if(!n.value || n.value.length < 4){
+    m.style.color="#f87171"; m.textContent="4자리 이상 입력하세요"; return;
+  }
+  if(n.value !== n2.value){
+    m.style.color="#f87171"; m.textContent="새 비밀번호가 일치하지 않습니다"; return;
+  }
+  try{ localStorage.setItem("wo_pw", n.value); }catch(e){}
+  m.style.color="#34d399"; m.textContent="✅ 변경 완료!";
+  setTimeout(function(){
+    c.value=""; n.value=""; n2.value=""; m.textContent="";
+  }, 2000);
+};
 
 updateClock();
 renderTabbar();

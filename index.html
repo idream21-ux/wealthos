@@ -1105,10 +1105,30 @@ window.analyzePhoto = async function(){
     const mime = file.type || "image/jpeg";
     const isStock = photoTarget === "stock";
     const prompt = isStock
-      ? `이 이미지는 증권앱 잔고/보유종목 화면입니다. 보유한 종목들을 JSON으로 추출하세요. 종목코드를 알 수 있으면 ticker에 넣고, 모르면 빈 문자열. 다른 설명 없이 JSON 배열만 출력:
-[{"ticker":"종목코드","name":"종목명","qty":수량,"avg":평균단가,"cur":현재가}]`
-      : `이 이미지는 연금 계좌 명세서/펀드 평가 화면입니다. 보유한 펀드들을 JSON으로 추출하세요. 다른 설명 없이 JSON 배열만 출력:
-[{"name":"펀드명","type":"국내주식/해외주식/채권/대안","amount":평가금액,"ytd":수익률}]`;
+      ? `이 이미지는 증권앱 잔고/보유종목 화면입니다.
+보유한 모든 종목을 JSON 배열로 추출하세요.
+
+⚠️ 매우 중요한 구분:
+- "평가금액" 또는 "평가액" = 현재 보유 자산의 총 가치 (현재가 × 수량)
+- "평가손익" = 수익/손실 금액 (절대 평가금액으로 사용 금지)
+- "수익률" = % 단위
+amount 필드에는 반드시 **평가금액**(평가액)을 넣으세요. 평가손익이 아닙니다.
+
+다른 설명 없이 JSON 배열만 출력:
+[{"ticker":"종목코드(없으면 빈문자열)","name":"종목명","qty":보유수량,"avg":평균단가,"cur":현재가}]`
+      : `이 이미지는 연금/퇴직연금 계좌 명세서, 펀드/ETF 평가 화면입니다.
+보유한 모든 종목/펀드를 JSON 배열로 추출하세요.
+
+⚠️ 매우 중요한 구분 (혼동 금지):
+- "평가금액" 또는 "평가액" = 현재 자산의 총 가치 → amount에 넣을 값
+- "평가손익" = 수익이나 손실 금액 → amount에 넣지 마세요
+- "수익률" 또는 "%" = ytd 필드에 넣을 값
+
+예시: 평가금액 14,938,880원 / 평가손익 7,254,445원 / 수익률 94.40% 인 경우
+→ {"name":"KODEX AI전력핵심설비", "amount": 14938880, "ytd": 94.40}
+
+다른 설명 없이 JSON 배열만 출력. 모든 종목을 빠짐없이 추출하세요:
+[{"name":"종목/펀드명","type":"국내주식|해외주식|채권|대안","amount":평가금액(절대 평가손익 아님),"ytd":수익률퍼센트}]`;
 
     let resp;
     try {
@@ -1232,33 +1252,108 @@ window.analyzePhoto = async function(){
 function renderAnalyzedItem(it, i, target){
   if(target==="stock"){
     const pl = it.avg && it.cur ? (((it.cur-it.avg)/it.avg)*100).toFixed(1) : "0";
+    const total = (Number(it.qty)||0) * (Number(it.cur)||0);
     return `
-    <div style="background:var(--s2);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-        <b style="font-size:13px;">${esc(it.name||"종목명 미확인")}</b>
-        <span style="font-size:10px;color:var(--tx3);font-family:var(--mono);">${esc(it.ticker||"")}</span>
+    <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px;">
+        <div>
+          <b style="font-size:13px;">${esc(it.name||"종목명 미확인")}</b>
+          ${it.ticker?`<span style="font-size:10px;color:var(--tx3);font-family:var(--mono);margin-left:6px;">${esc(it.ticker)}</span>`:""}
+        </div>
+        <span class="${pl>=0?"up":"dn"}" style="font-size:13px;font-weight:700;font-family:var(--mono);white-space:nowrap;">${pl>=0?"+":""}${pl}%</span>
       </div>
-      <div style="display:flex;gap:10px;font-size:11px;color:var(--tx3);">
-        <span>수량: <b style="color:var(--tx);font-family:var(--mono);">${N(it.qty||0)}</b></span>
-        <span>평균: <b style="color:var(--tx);font-family:var(--mono);">${N(it.avg||0)}</b></span>
-        <span>현재: <b style="color:var(--tx);font-family:var(--mono);">${N(it.cur||0)}</b></span>
-        <span class="${pl>=0?"up":"dn"}" style="margin-left:auto;font-weight:700;">${pl>=0?"+":""}${pl}%</span>
+      <div style="display:flex;gap:10px;font-size:11px;color:var(--tx3);margin-bottom:6px;">
+        <span>수량 <b style="color:var(--tx);font-family:var(--mono);">${N(it.qty||0)}</b></span>
+        <span>평균 <b style="color:var(--tx);font-family:var(--mono);">${N(it.avg||0)}</b></span>
+        <span>현재 <b style="color:var(--tx);font-family:var(--mono);">${N(it.cur||0)}</b></span>
       </div>
+      <div style="font-size:11px;color:var(--tx3);">평가금액: <b style="color:var(--g);font-family:var(--mono);font-size:13px;">${N(total)}원</b></div>
+      <button onclick="editAnalyzedItem(${i})" style="margin-top:8px;width:100%;padding:6px;background:transparent;border:1px solid var(--b2);color:var(--tx2);border-radius:6px;font-size:10.5px;cursor:pointer;">✏️ 수정</button>
     </div>`;
   } else {
     return `
-    <div style="background:var(--s2);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-        <b style="font-size:13px;">${esc(it.name||"펀드명 미확인")}</b>
-        <span class="${(it.ytd||0)>=0?"up":"dn"}" style="font-size:11px;font-weight:700;font-family:var(--mono);">${(it.ytd||0)>=0?"+":""}${it.ytd||0}%</span>
+    <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px;">
+        <b style="font-size:13px;line-height:1.3;">${esc(it.name||"펀드명 미확인")}</b>
+        <span class="${(it.ytd||0)>=0?"up":"dn"}" style="font-size:13px;font-weight:700;font-family:var(--mono);white-space:nowrap;">${(it.ytd||0)>=0?"+":""}${it.ytd||0}%</span>
       </div>
-      <div style="display:flex;gap:10px;font-size:11px;color:var(--tx3);">
-        <span>유형: <b style="color:var(--tx);">${esc(it.type||"기타")}</b></span>
-        <span>금액: <b style="color:var(--tx);font-family:var(--mono);">${B(it.amount||0)}원</b></span>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;">
+        <span style="color:var(--tx3);">유형: <b style="color:var(--tx);">${esc(it.type||"기타")}</b></span>
+        <span style="color:var(--tx3);">평가금액: <b style="color:var(--g);font-family:var(--mono);font-size:13px;">${N(it.amount||0)}원</b></span>
       </div>
+      <button onclick="editAnalyzedItem(${i})" style="margin-top:8px;width:100%;padding:6px;background:transparent;border:1px solid var(--b2);color:var(--tx2);border-radius:6px;font-size:10.5px;cursor:pointer;">✏️ 금액·수익률 수정</button>
     </div>`;
   }
 }
+
+window.editAnalyzedItem = function(idx){
+  const it = lastAnalyzed[idx];
+  if(!it) return;
+  const isStock = photoTarget==="stock";
+
+  if(isStock){
+    openDrawer(`
+      <div class="dtitle">✏️ 종목 정보 수정</div>
+      <div style="font-size:12px;color:var(--tx3);margin-bottom:12px;">${esc(it.name||"")}</div>
+      <div class="fr">
+        <div class="fg"><label class="fl">수량</label><input class="fi" type="number" id="ed-qty" value="${it.qty||0}"/></div>
+        <div class="fg"><label class="fl">평균단가</label><input class="fi" type="number" id="ed-avg" value="${it.avg||0}"/></div>
+      </div>
+      <div class="fg"><label class="fl">현재가</label><input class="fi" type="number" id="ed-cur" value="${it.cur||0}"/></div>
+      <button class="btn btn-p btn-w" onclick="saveEditedItem(${idx})">💾 적용</button>
+    `);
+  } else {
+    openDrawer(`
+      <div class="dtitle">✏️ 펀드 정보 수정</div>
+      <div style="font-size:12px;color:var(--tx3);margin-bottom:12px;">${esc(it.name||"")}</div>
+      <div class="fg">
+        <label class="fl">평가금액 (원) - 평가손익 아님!</label>
+        <input class="fi" type="number" id="ed-amt" value="${it.amount||0}"/>
+        <div style="font-size:10px;color:var(--y);margin-top:4px;">⚠️ 평가금액 = 현재 자산 총 가치 (예: 14,938,880원)</div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">수익률 (%)</label><input class="fi" type="number" step="0.01" id="ed-ytd" value="${it.ytd||0}"/></div>
+        <div class="fg"><label class="fl">유형</label>
+          <select class="fs" id="ed-type">
+            <option ${it.type==="국내주식"?"selected":""}>국내주식</option>
+            <option ${it.type==="해외주식"?"selected":""}>해외주식</option>
+            <option ${it.type==="채권"?"selected":""}>채권</option>
+            <option ${it.type==="대안"?"selected":""}>대안</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-p btn-w" onclick="saveEditedItem(${idx})">💾 적용</button>
+    `);
+  }
+};
+
+window.saveEditedItem = function(idx){
+  const it = lastAnalyzed[idx];
+  if(!it) return;
+  if(photoTarget==="stock"){
+    it.qty = Number(document.getElementById("ed-qty").value)||0;
+    it.avg = Number(document.getElementById("ed-avg").value)||0;
+    it.cur = Number(document.getElementById("ed-cur").value)||0;
+  } else {
+    it.amount = Number(document.getElementById("ed-amt").value)||0;
+    it.ytd = Number(document.getElementById("ed-ytd").value)||0;
+    it.type = document.getElementById("ed-type").value;
+  }
+  closeDrawer();
+  // 결과 다시 렌더
+  const res = document.getElementById("photo-result");
+  if(res){
+    res.innerHTML = `
+      <div class="ai-box" style="margin-top:14px;border:1px solid rgba(52,211,153,.3);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:20px;">✅</span>
+          <span style="font-size:14px;font-weight:700;color:var(--g);">분석 완료 — ${lastAnalyzed.length}개 항목 추출</span>
+        </div>
+        ${lastAnalyzed.map((it,i)=>renderAnalyzedItem(it,i,photoTarget)).join("")}
+        <button class="btn btn-p btn-w" style="margin-top:12px;" onclick="saveAllAnalyzed()">💾 모두 저장 (${lastAnalyzed.length}개)</button>
+      </div>`;
+  }
+};
 
 window.saveAllAnalyzed = function(){
   if(!lastAnalyzed || !lastAnalyzed.length){ alert("저장할 항목이 없습니다"); return; }

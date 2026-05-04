@@ -1466,47 +1466,78 @@ if("serviceWorker" in navigator){
 /* ══════════════════════════════════════════════════════
    초기화
 ══════════════════════════════════════════════════════ */
-/* ── 비밀번호 잠금 ── */
+/* ── 비밀번호 잠금 (localStorage 직접 사용으로 안정화) ── */
 const PW_KEY = "wo_pw";
 
-function getLockPw(){ return DB.get(PW_KEY) || "01234"; }
+function getLockPw(){
+  try { return localStorage.getItem(PW_KEY) || "01234"; }
+  catch(e) { return "01234"; }
+}
+function setLockPw(pw){
+  try { localStorage.setItem(PW_KEY, pw); } catch(e) {}
+}
 
 let lockFail = 0;
 function lockSubmit(){
-  const val = document.getElementById("lock-pw").value;
+  const val = (document.getElementById("lock-pw").value || "").trim();
   const err = document.getElementById("lock-err");
-  if(val === getLockPw()){
+  const saved = getLockPw();
+
+  if(val === saved){
     document.getElementById("lock-screen").style.display = "none";
     document.getElementById("app").style.display = "flex";
-    lockFail = 0; err.textContent = "";
+    lockFail = 0;
+    err.textContent = "";
   } else {
     lockFail++;
-    err.textContent = lockFail >= 3 ? "5초 후 재시도 가능" : "비밀번호가 틀렸습니다";
     document.getElementById("lock-pw").value = "";
     if(lockFail >= 3){
+      err.textContent = "5초 후 재시도 가능";
       const btn = document.querySelector(".lock-btn");
-      btn.disabled = true; btn.textContent = "잠시 대기...";
-      setTimeout(()=>{ btn.disabled=false; btn.textContent="잠금 해제"; lockFail=0; err.textContent=""; }, 5000);
+      btn.disabled = true;
+      btn.textContent = "잠시 대기...";
+      setTimeout(()=>{
+        btn.disabled = false;
+        btn.textContent = "잠금 해제";
+        lockFail = 0;
+        err.textContent = "";
+      }, 5000);
+    } else {
+      err.textContent = "비밀번호가 틀렸습니다 (" + lockFail + "/3)";
     }
   }
 }
 
 window.changePw = function(){
-  const cur  = document.getElementById("pw-cur").value;
-  const nw   = document.getElementById("pw-new").value;
-  const nw2  = document.getElementById("pw-new2").value;
-  const msg  = document.getElementById("pw-msg");
-  if(cur !== getLockPw()){ msg.style.color="var(--r)"; msg.textContent="현재 비밀번호가 틀렸습니다"; return; }
-  if(nw.length < 4){       msg.style.color="var(--r)"; msg.textContent="4자리 이상 입력하세요"; return; }
-  if(nw !== nw2){          msg.style.color="var(--r)"; msg.textContent="새 비밀번호가 일치하지 않습니다"; return; }
-  DB.set(PW_KEY, nw);
-  msg.style.color = "var(--g)"; msg.textContent = "✅ 변경 완료!";
-  setTimeout(()=>{ document.getElementById("pw-cur").value=""; document.getElementById("pw-new").value=""; document.getElementById("pw-new2").value=""; msg.textContent=""; }, 2000);
+  const cur = document.getElementById("pw-cur").value;
+  const nw  = document.getElementById("pw-new").value;
+  const nw2 = document.getElementById("pw-new2").value;
+  const msg = document.getElementById("pw-msg");
+  if(!cur || cur !== getLockPw()){
+    msg.style.color="var(--r)"; msg.textContent="현재 비밀번호가 틀렸습니다"; return;
+  }
+  if(!nw || nw.length < 4){
+    msg.style.color="var(--r)"; msg.textContent="새 비밀번호는 4자리 이상이어야 합니다"; return;
+  }
+  if(nw !== nw2){
+    msg.style.color="var(--r)"; msg.textContent="새 비밀번호가 일치하지 않습니다"; return;
+  }
+  setLockPw(nw);
+  msg.style.color="var(--g)"; msg.textContent="✅ 비밀번호가 변경됐습니다!";
+  setTimeout(()=>{
+    document.getElementById("pw-cur").value="";
+    document.getElementById("pw-new").value="";
+    document.getElementById("pw-new2").value="";
+    msg.textContent="";
+  }, 2000);
 };
 
 /* 앱 숨기고 잠금화면 먼저 표시 */
 document.getElementById("app").style.display = "none";
-setTimeout(()=>document.getElementById("lock-pw").focus(), 100);
+setTimeout(()=>{
+  const inp = document.getElementById("lock-pw");
+  if(inp) inp.focus();
+}, 200);
 
 updateClock();
 renderTabbar();

@@ -1465,55 +1465,106 @@ window.analyzePhoto = async function(){
 
     const isStock = photoTarget === "stock";
     const prompt = isStock
-      ? `여러 장의 증권사/증권앱 잔고 화면을 분석합니다. 각 사진은 서로 다른 계좌일 수 있습니다.
-모든 이미지에서 보유한 모든 종목을 빠짐없이 JSON 배열로 추출하세요.
+      ? `여러 장의 한국 증권사 앱/HTS 잔고 화면을 통합 분석합니다.
 
-⚠️ 컬럼 식별 규칙 (한국 증권앱 기준):
-화면에는 보통 다음 컬럼들이 있습니다:
-- "종목명" 또는 "Name"
-- "보유수량" 또는 "잔고수량" 또는 "수량" → qty (작은 정수, 보통 1~수만)
-- "평균단가" 또는 "매입가" 또는 "평단" → avg
-- "현재가" 또는 "체결가" → cur
-- "평가금액" 또는 "평가액" → 참고용 (qty × cur)
-- "평가손익" 또는 "손익" → ⛔ qty/avg/cur과 절대 혼동 금지! 빨간/파란 색으로 표시되는 손익금액
-- "수익률" 또는 "%" → 참고용
+【화면 형태 A: KRX/HTS 표 형태】
+각 행: 종목명 | 평가손익 | 잔고수량 | 매입가
+                | 수익률   | 평가금액 | 현재가
+- "잔고수량" 또는 "보유수량" 컬럼 = qty
+- "매입가" 또는 "평균단가" = avg
+- "현재가" = cur
+- ⛔ "평가손익"(빨간/파란색)은 절대 qty/avg/cur로 사용하지 말 것
 
-⚠️ 절대 혼동 금지:
-- "평가손익"은 결과값이며 절대 qty/avg/cur 어디에도 넣지 마세요
-- qty는 작은 정수(1~수만). 100만 이상이면 거의 확실히 평가금액을 잘못 넣은 것
-- 컬럼명을 정확히 보고 추출. 색상이 빨간색/파란색인 숫자는 보통 손익이므로 무시
+【화면 형태 B: 모바일 카드 형태 (토스/키움/IBK)】
+"TIGER 반도체TOP10
+ 14주        ← qty
+ 590,450원   ← 평가금액 = qty × cur
+ +179,900원 (43.8%)   ← 평가손익(이건 무시)"
 
-검증 규칙:
-- qty * cur ≈ 평가금액 이어야 함
-- avg, cur 는 보통 100원 ~ 100만원 사이
-- qty는 보통 1주 ~ 수만주 사이
+이 경우 cur = 평가금액 / qty 로 계산:
+→ {"name":"TIGER 반도체TOP10", "qty":14, "avg":29325, "cur":42175}
+   (평가금액 590,450 / 14주 = 42,175원)
 
-여러 사진에 같은 종목이 있으면 별도 항목으로 추출 (계좌별로 분리).
+🚨 추출 규칙:
 
-다른 설명 없이 JSON 배열만 출력:
-[{"ticker":"종목코드(없으면 빈문자열)","name":"종목명","qty":보유수량(작은 정수),"avg":평균단가,"cur":현재가,"account":"계좌구분(있으면)"}]`
-      : `여러 장의 연금/퇴직연금 계좌 명세서를 분석합니다. 각 사진은 서로 다른 계좌일 수 있습니다.
-모든 보유 종목/펀드를 JSON 배열로 빠짐없이 추출하세요.
+1. qty (보유수량): 정수, 보통 1~10,000주
+   - "14주", "1주", "2주" 같이 표시되는 작은 숫자
+   - ⛔ 50만 이상이면 거의 확실히 평가금액·평가손익을 잘못 넣은 것
 
-⚠️ 한국 퇴직연금 화면 컬럼 식별:
-- "평가금액" 또는 "평가액" = 현재 자산 총 가치 → amount에 넣을 값
-- "평가손익" 또는 "손익" = 수익/손실 금액 (빨간/파란색) → ⛔ amount에 절대 넣지 말것
-- "수익률" 또는 "%" = ytd 필드
-- "납입금액" / "매입금액" = 원금 (참고용)
+2. avg (평균단가): 1주당 가격, 보통 1,000원~1,000,000원
+3. cur (현재가): 1주당 가격, 보통 1,000원~1,000,000원
 
-예시: 화면에 "평가금액 14,938,880원 / 평가손익 +7,254,445원 / 수익률 +94.40%"
-→ {"name":"KODEX AI전력", "amount": 14938880, "ytd": 94.40}
-→ ⛔ 절대 amount에 7,254,445를 넣지 마세요
+4. ⛔ 절대 무시할 것:
+   - "평가손익" (빨간/파란색 큰 숫자, 보통 만원~수십만원)
+   - "수익률" (퍼센트)
+   - "납입금액", "매입금액" (총합)
+   - "평가금액" (qty × cur로 계산되는 값)
 
-ETF/펀드 자산유형 분류:
-- KODEX/TIGER/RISE 등 한국 ETF → "국내주식"
-- KODEX 미국/TIGER 미국/SPY/QQQ 등 → "해외주식"
-- 채권/국고채/회사채 → "채권"
-- 정기예금/원리금보장상품 → "원리금보장"
+📋 정확한 추출 예시:
+
+이미지에 "삼성전자 / 잔고수량: 12 / 매입가: 207,791 / 현재가: 296,500" 표시
+→ {"name":"삼성전자", "ticker":"005930", "qty":12, "avg":207791, "cur":296500}
+
+이미지에 "TIGER 반도체TOP10 / 14주 / 590,450원" 카드 표시
+→ {"name":"TIGER 반도체TOP10", "qty":14, "avg":29325, "cur":42175}
+
+이미지에 "KODEX 코스피100 / 1주 / 83,235원" 카드 표시
+→ {"name":"KODEX 코스피100", "qty":1, "avg":40820, "cur":83235}
+
+⚠️ 제외 대상:
+- "현금", "예수금", "USD 현금" — 종목 아님
+- "USD" 0주 — 의미 없음
+
+JSON 배열만 출력 (설명·코드블록 없이):
+[{"ticker":"","name":"","qty":주수,"avg":평균단가,"cur":현재가}]`
+      : `여러 장의 한국 퇴직연금/IRP 계좌 명세서를 통합 분석합니다.
+각 사진은 서로 다른 계좌일 수 있으며 모두 통합 추출하세요.
+
+📋 화면 구성:
+"ETF/리츠", "펀드/채권", "원리금보장상품", "디폴트옵션" 등 섹션이 있을 수 있습니다.
+모든 섹션의 모든 종목을 빠짐없이 추출하세요.
+
+🚨 컬럼 정의 (절대 혼동 금지):
+
+1. amount (평가금액) — 현재 자산의 총 가치
+   - "평가금액", "평가액", "잔고" 컬럼
+   - 보통 수만 ~ 수억원
+
+2. ytd (수익률) — 퍼센트 단위
+   - "수익률", "%" 표시
+   - 보통 -50 ~ +200 범위
+
+3. ⛔ 절대 amount에 넣지 말 것:
+   - "평가손익" 또는 "손익" (빨간/파란색)
+   - "납입금액", "매입금액" (원금)
+
+📋 정확한 추출 예시:
+
+이미지에 다음과 같이 표시되어 있다면:
+"KODEX AI전력핵심설비
+ 평가손익  7,254,445  보유수량  256
+ 수익률    94.40%     평가금액  14,938,880  매도가능 256"
+→ {"name":"KODEX AI전력핵심설비", "amount":14938880, "ytd":94.40, "type":"국내주식"}
+→ ⛔ amount에 7,254,445(평가손익)를 넣으면 큰 오류
+
+이미지에 "푸른상호저축은행 정기예금(6개월)DC형 / 평가금액 3,306,104원 / 수익률 0.62%"
+→ {"name":"푸른상호저축은행 정기예금(6개월)DC형", "amount":3306104, "ytd":0.62, "type":"원리금보장"}
+
+🏷️ 자산유형 자동 분류:
+- KODEX/TIGER/RISE/KBSTAR 등 한국 ETF → "국내주식"
+- KODEX 미국S&P/TIGER 미국나스닥/SPY/QQQ → "해외주식"
+- 정기예금/저축은행/예금/DC형/IC형/이율보증형 → "원리금보장"
+- 국민주택채권/회사채/국고채 → "채권"
 - 리츠/REITs/원자재 → "대안"
+- 그 외 → "기타"
 
-다른 설명 없이 JSON 배열만 출력. 모든 종목 빠짐없이:
-[{"name":"종목/펀드명","type":"국내주식|해외주식|채권|대안|원리금보장","amount":평가금액(절대 평가손익 아님),"ytd":수익률퍼센트}]`;
+⚠️ 제외 대상:
+- "현금자산", "예수금", "현금" 항목
+- "디폴트옵션" 같은 설정 항목
+- 평가금액이 0인 항목
+
+JSON 배열만 출력 (설명·코드블록 없이, 빠짐없이):
+[{"name":"종목/펀드명","type":"국내주식|해외주식|채권|대안|원리금보장|기타","amount":평가금액,"ytd":수익률퍼센트}]`;
 
     let resp;
     try {
@@ -1642,22 +1693,28 @@ function renderAnalyzedItem(it, i, target){
   if(target==="stock"){
     const pl = it.avg && it.cur ? (((it.cur-it.avg)/it.avg)*100).toFixed(1) : "0";
     const total = (Number(it.qty)||0) * (Number(it.cur)||0);
+    // 비정상 검출: qty>50만 OR 평가가치>100억 OR avg=cur으로 동일하면서 큰값
+    const isAbnormal = (Number(it.qty)||0) > 500000 || total > 1e10 ||
+                       (Number(it.avg) === Number(it.cur) && Number(it.cur) > 1000000 && Number(it.qty) > 1);
+    const isCash = /^(현금|예수금|국내\s?현금|USD\s?현금|cash|usd)$/i.test((it.name||"").trim());
     return `
-    <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:8px;">
+    <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:8px;${isAbnormal?'border:2px solid var(--r);':isCash?'opacity:0.5;border:1px dashed var(--y);':''}">
+      ${isAbnormal ? `<div style="background:rgba(248,113,113,.18);color:var(--r);border-radius:4px;padding:5px 8px;font-size:11px;margin-bottom:8px;font-weight:700;">⚠️ AI가 컬럼 잘못 매칭한 듯 — 수정 필요!</div>` : ''}
+      ${isCash ? `<div style="background:rgba(251,191,36,.15);color:var(--y);border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;font-weight:700;">ℹ️ 종목 아님 (저장 시 자동 제외)</div>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px;">
         <div>
           <b style="font-size:13px;">${esc(it.name||"종목명 미확인")}</b>
-          ${it.ticker?`<span style="font-size:10px;color:var(--tx3);font-family:var(--mono);margin-left:6px;">${esc(it.ticker)}</span>`:""}
+          ${it.ticker?`<span style="font-size:10px;color:var(--tx2);font-family:var(--mono);margin-left:6px;">${esc(it.ticker)}</span>`:""}
         </div>
         <span class="${pl>=0?"up":"dn"}" style="font-size:13px;font-weight:700;font-family:var(--mono);white-space:nowrap;">${pl>=0?"+":""}${pl}%</span>
       </div>
-      <div style="display:flex;gap:10px;font-size:11px;color:var(--tx3);margin-bottom:6px;">
-        <span>수량 <b style="color:var(--tx);font-family:var(--mono);">${N(it.qty||0)}</b></span>
+      <div style="display:flex;gap:10px;font-size:11px;color:var(--tx2);margin-bottom:6px;">
+        <span>수량 <b style="color:${isAbnormal?'var(--r)':'var(--tx)'};font-family:var(--mono);">${N(it.qty||0)}</b></span>
         <span>평균 <b style="color:var(--tx);font-family:var(--mono);">${N(it.avg||0)}</b></span>
         <span>현재 <b style="color:var(--tx);font-family:var(--mono);">${N(it.cur||0)}</b></span>
       </div>
-      <div style="font-size:11px;color:var(--tx3);">평가금액: <b style="color:var(--g);font-family:var(--mono);font-size:13px;">${N(total)}원</b></div>
-      <button onclick="editAnalyzedItem(${i})" style="margin-top:8px;width:100%;padding:6px;background:transparent;border:1px solid var(--b2);color:var(--tx2);border-radius:6px;font-size:10.5px;cursor:pointer;">✏️ 수정</button>
+      <div style="font-size:11px;color:var(--tx2);">평가금액: <b style="color:${isAbnormal?'var(--r)':'var(--g)'};font-family:var(--mono);font-size:13px;">${N(total)}원</b></div>
+      <button onclick="editAnalyzedItem(${i})" style="margin-top:8px;width:100%;padding:8px;background:${isAbnormal?'var(--r)':'transparent'};border:1px solid var(--b2);color:${isAbnormal?'#fff':'var(--tx2)'};border-radius:6px;font-size:11px;cursor:pointer;font-weight:${isAbnormal?700:400};">${isAbnormal?'⚠️ 수정 필요 — 클릭':'✏️ 수정'}</button>
     </div>`;
   } else {
     return `
@@ -1750,18 +1807,54 @@ window.saveAllAnalyzed = function(){
   let count = 0;
   if(photoTarget==="stock"){
     let warnings = [];
+    let skipped = [];
+    let abnormal = [];
+
     lastAnalyzed.forEach(it=>{
       if(!it.name) return;
+
+      // 비종목 자동 제외
+      if(/^(현금|예수금|국내\s?현금|USD\s?현금|cash|usd)$/i.test(it.name.trim())){
+        skipped.push(it.name);
+        return;
+      }
+
       let qty = Number(it.qty)||0;
       let avg = Number(it.avg)||0;
       let cur = Number(it.cur)||avg||0;
 
-      // 검증: qty가 비정상적으로 크면 보정
-      if(qty > 100000 && cur > 0){
-        // qty가 평가금액일 가능성 - 추정 수량으로 변환
-        const estimated = Math.round(qty / cur);
-        warnings.push(`${it.name}: 수량 ${qty.toLocaleString()} → ${estimated} (자동 보정)`);
-        qty = estimated;
+      // 자동 보정 시도
+      if(qty > 500000){
+        // qty가 평가금액일 가능성 — cur로 나눠서 추정
+        if(cur > 100 && cur < 1000000){
+          const newQty = Math.round(qty / cur);
+          if(newQty > 0 && newQty < 100000){
+            warnings.push(`${it.name}: 수량 ${qty.toLocaleString()}→${newQty}`);
+            qty = newQty;
+          } else {
+            abnormal.push(`${it.name} (수량 ${N(qty)})`);
+          }
+        } else {
+          abnormal.push(`${it.name} (수량 ${N(qty)})`);
+        }
+      }
+
+      // avg와 cur이 같은 큰 숫자면 평가금액 잘못 넣은 것
+      if(avg === cur && avg > 100000 && qty > 1 && qty < 100){
+        const real = Math.round(avg / qty);
+        if(real > 100 && real < 1000000){
+          warnings.push(`${it.name}: 평균/현재 ${avg.toLocaleString()}→${real.toLocaleString()}`);
+          avg = real;
+          cur = real;
+        } else {
+          abnormal.push(`${it.name} (avg=cur=${N(avg)})`);
+        }
+      }
+
+      // 최종 검증
+      const total = qty * cur;
+      if(total > 1e10){
+        abnormal.push(`${it.name}: 평가가치 ${B(total)}원 비정상`);
       }
 
       S.stocks.push({
@@ -1773,17 +1866,40 @@ window.saveAllAnalyzed = function(){
       });
       count++;
     });
-    if(warnings.length){
-      setTimeout(()=>alert("자동 보정된 항목:\n\n" + warnings.join("\n") + "\n\n주식 탭에서 수정하세요."), 800);
-    }
+
+    let msg = "";
+    if(skipped.length) msg += "ℹ️ 제외됨 (비종목): " + skipped.join(", ") + "\n\n";
+    if(warnings.length) msg += "🔧 자동 보정:\n" + warnings.join("\n") + "\n\n";
+    if(abnormal.length) msg += "⚠️ 보정 실패 — 주식 탭에서 직접 수정하세요:\n" + abnormal.join("\n");
+    if(msg) setTimeout(()=>alert(msg), 800);
   } else {
+    let pSkipped = [];
+    let pWarnings = [];
+
     lastAnalyzed.forEach(it=>{
       if(!it.name) return;
+
+      if(/^(현금자산|예수금|현금|cash|디폴트옵션)/i.test(it.name.trim())){
+        pSkipped.push(it.name);
+        return;
+      }
+
+      const amount = Number(it.amount)||0;
+      if(amount === 0){
+        pSkipped.push(it.name + "(0원)");
+        return;
+      }
+
+      // 100억 이상은 비정상
+      if(amount > 1e10){
+        pWarnings.push(`${it.name}: ${B(amount)}원`);
+      }
+
       S.pension.funds.push({
         id:Date.now()+count,
         name:it.name,
         type:it.type||"기타",
-        amount:Number(it.amount)||0,
+        amount,
         ytd:Number(it.ytd)||0,
         signal:"hold"
       });
@@ -1791,6 +1907,11 @@ window.saveAllAnalyzed = function(){
     });
     S.pension.total = S.pension.funds.reduce((a,f)=>a+(Number(f.amount)||0), 0);
     S.pension.at = ts();
+
+    let pMsg = "";
+    if(pSkipped.length) pMsg += "ℹ️ 제외됨: " + pSkipped.join(", ") + "\n\n";
+    if(pWarnings.length) pMsg += "⚠️ 비정상 항목 — 연금 탭에서 ✏️ 수정하세요:\n" + pWarnings.join("\n");
+    if(pMsg) setTimeout(()=>alert(pMsg), 800);
   }
 
   S.at = ts(); save();

@@ -1591,6 +1591,45 @@ window.removePhoto = i => {
 };
 
 /* ── AI 분석 (CORS 우회: 분석 단계별 표시) ── */
+/* 이미지 리사이즈 — 8000px 한도 회피 + 용량 압축 */
+async function resizeImage(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      const original = `${width}×${height}`;
+      // 한 변이 maxDim 초과면 비율 유지하며 축소
+      if(width > maxDim || height > maxDim){
+        if(width > height){
+          height = Math.round(height * maxDim / width);
+          width = maxDim;
+        } else {
+          width = Math.round(width * maxDim / height);
+          height = maxDim;
+        }
+      }
+      // canvas로 리사이즈
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      const b64 = dataUrl.split(",")[1];
+      URL.revokeObjectURL(url);
+      const sizeKB = Math.round(b64.length * 0.75 / 1024);
+      const info = original !== `${width}×${height}` ? `(${original} → ${width}×${height}, ${sizeKB}KB)` : `(${sizeKB}KB)`;
+      resolve({ b64, info, width, height });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("이미지 로드 실패"));
+    };
+    img.src = url;
+  });
+}
+
 window.analyzePhoto = async function(){
   if(!photoFiles.length){ alert("사진을 먼저 업로드하세요"); return; }
 
@@ -1620,14 +1659,12 @@ window.analyzePhoto = async function(){
     const allImages = [];
     for(let i=0; i<photoFiles.length; i++){
       const file = photoFiles[i];
-      const b64 = await new Promise((ok,fail)=>{
-        const r=new FileReader();
-        r.onload=()=>ok(r.result.split(",")[1]);
-        r.onerror=fail;
-        r.readAsDataURL(file);
-      });
-      allImages.push({mime: file.type||"image/jpeg", data: b64});
-      if(step) step.textContent = `📤 인코딩 중... (${i+1}/${photoFiles.length})`;
+      if(step) step.textContent = `📤 처리 중... (${i+1}/${photoFiles.length})`;
+
+      // 이미지 리사이즈 (8000px 초과 방지 + 4MB 이하로 압축)
+      const result = await resizeImage(file, 7500, 0.85);
+      allImages.push({mime: "image/jpeg", data: result.b64});
+      if(step) step.textContent = `📤 처리 중... (${i+1}/${photoFiles.length}) ${result.info}`;
     }
 
     if(step) step.textContent = `🤖 Claude API 호출 중... (${photoFiles.length}장 통합 분석)`;

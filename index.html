@@ -266,6 +266,7 @@ const DB = {
 /* ── 2. 기본 데이터 ──────────────────────────────────── */
 const DEFAULT = {
   vix:{value:28.4,prev:24.1,hist:[18,20,22,19,24,28,31,28,26,28],at:new Date().toISOString()},
+  vkospi:{value:22.1,prev:20.5,hist:[15,17,19,16,21,24,26,22,21,22],at:new Date().toISOString()},
   pension:{
     total:342000000,
     target:{ds:40,fs:30,bd:20,al:10},
@@ -297,6 +298,10 @@ const DEFAULT = {
 
 /* ── 3. 상태 ─────────────────────────────────────────── */
 let S = DB.get("wo_data") || JSON.parse(JSON.stringify(DEFAULT));
+if(!S.vkospi){
+  S.vkospi = JSON.parse(JSON.stringify(DEFAULT.vkospi));
+  save();
+}
 let currentPage = "home";
 
 function save(){ DB.set("wo_data",S); }
@@ -320,6 +325,85 @@ const VZ = [
   {min:35,max:99, name:"극도 공포",col:"#ff4444", act:["적극 저점 매수","ETF 집중 매수","주식 +20%"]},
 ];
 const GZ = v => VZ.find(z=>v>=z.min&&v<z.max)||VZ[4];
+
+/* 페이지 열 때마다 호출 - VIX/VKOSPI 갱신 시도 (하루 1회) */
+async function refreshIndices(){
+  const apiKey = (localStorage.getItem("wo_apikey")||"").trim();
+
+  // 같은 날 이미 업데이트했으면 스킵 (VIX/VKOSPI는 일 1회 종가만 사용)
+  const lastDate = S.vix?.at ? new Date(S.vix.at).toDateString() : "";
+  const todayDate = new Date().toDateString();
+  if(lastDate === todayDate) return false;
+
+  // API 키 없으면 시각만 갱신 (값은 그대로)
+  if(!apiKey){
+    S.vix.at = ts();
+    if(S.vkospi) S.vkospi.at = ts();
+    save();
+    return true;
+  }
+
+  // Claude API로 최신 VIX/VKOSPI 조회
+  try{
+    const today = new Date().toISOString().split("T")[0];
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access":"true"
+      },
+      body: JSON.stringify({
+        model:"claude-sonnet-4-20250514",
+        max_tokens:200,
+        messages:[{role:"user", content:`${today} 기준 가장 최근 거래일의 VIX와 VKOSPI 종가를 알려주세요.
+VIX는 CBOE에서 산출한 S&P500 변동성지수, VKOSPI는 한국거래소가 산출한 KOSPI200 변동성지수입니다.
+정확한 값을 모르면 가장 최근 알려진 값으로 답해도 됩니다.
+
+JSON만 출력 (설명 없이):
+{"vix": 숫자, "vkospi": 숫자}`}]
+      })
+    });
+    const d = await resp.json();
+    if(d.error) return false;
+    const txt = d.content?.find(c=>c.type==="text")?.text || "";
+    const m = txt.match(/\{[\s\S]*?\}/);
+    if(!m) return false;
+    const data = JSON.parse(m[0]);
+
+    if(data.vix && data.vix > 0){
+      S.vix = {...S.vix, prev:S.vix.value, value:data.vix, hist:[...S.vix.hist.slice(1), data.vix], at:ts()};
+    }
+    if(data.vkospi && data.vkospi > 0){
+      S.vkospi = {
+        ...(S.vkospi || {prev:data.vkospi, hist:[data.vkospi]*10}),
+        prev: S.vkospi?.value || data.vkospi,
+        value: data.vkospi,
+        hist: [...(S.vkospi?.hist || [data.vkospi]*9).slice(1), data.vkospi],
+        at: ts()
+      };
+    }
+    save();
+    return true;
+  } catch(e) {
+    // 실패해도 시각은 갱신
+    S.vix.at = ts();
+    if(S.vkospi) S.vkospi.at = ts();
+    save();
+    return false;
+  }
+}
+
+function getCombinedSignal(vix, vkospi){
+  const vH = vix >= 25, kH = vkospi >= 25;
+  const vL = vix < 20, kL = vkospi < 20;
+  if(vH && kH) return "🔥 글로벌·국내 동반 공포 — 분할 매수 적기";
+  if(vH && !kH) return "⚠️ 미국발 충격 임박 — 외국인 매도 가능, 신규 매수 보류";
+  if(!vH && kH) return "🇰🇷 한국 고유 리스크 — 국내 비중 일부 축소 검토";
+  if(vL && kL) return "✅ 양국 모두 안정 — 정상 운용 가능";
+  return "🟡 중립 — 현 포지션 유지";
+}
 
 function tag(s){
   const m={buy:["매수","buy"],sell:["매도","sell"],hold:["보유","hold"],watch:["관망","watch"]};
@@ -355,6 +439,13 @@ function goPage(p){
   window.scrollTo(0,0);
   const sc = document.getElementById("scroll"); if(sc) sc.scrollTop=0;
   if(p==="input") setTimeout(bindPhotoEvents, 50);
+
+  // VIX/VKOSPI 자동 업데이트 (홈, 공포지수 진입 시)
+  if(p==="home" || p==="vix"){
+    refreshIndices().then(updated => {
+      if(updated) renderPage();
+    });
+  }
 }
 
 /* ── 7. 페이지 라우터 ────────────────────────────────── */
@@ -405,6 +496,7 @@ function pageHome(){
   const vh  = S.vehicles.reduce((a,x)=>a+x.cur,0);
   const total = stk+re+vh+S.pension.total+(S.cash||0);
   const z = GZ(S.vix.value);
+  const zk = GZ(S.vkospi?.value || 22);
 
   return `
   <div class="card" style="background:linear-gradient(135deg,#0d1828,#111e33);border-color:rgba(79,128,255,.2);margin-bottom:14px;">
@@ -413,10 +505,18 @@ function pageHome(){
     <div class="stamp" style="margin-top:6px;">📅 ${DF(S.at)} 기준</div>
     <div style="margin-top:12px;display:flex;align-items:center;gap:10px;">
       <div style="background:${z.col}22;border:1px solid ${z.col}44;border-radius:20px;padding:3px 12px;display:inline-flex;align-items:center;gap:6px;">
-        <span style="font-size:12px;font-weight:700;color:${z.col};">VIX ${S.vix.value}</span>
-        <span style="font-size:11px;color:${z.col};">${z.name}</span>
+        <span style="font-size:11px;font-weight:700;color:${z.col};">VIX ${S.vix.value}</span>
+        <span style="font-size:10px;color:${z.col};">${z.name}</span>
       </div>
-      <span style="font-size:12px;color:#aabbdd;font-weight:600;">→ ${z.act[0]}</span>
+      <div style="background:${zk.col}22;border:1px solid ${zk.col}44;border-radius:20px;padding:3px 12px;display:inline-flex;align-items:center;gap:6px;">
+        <span style="font-size:11px;font-weight:700;color:${zk.col};">VKOSPI ${S.vkospi?.value || 22}</span>
+        <span style="font-size:10px;color:${zk.col};">${zk.name}</span>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:#aabbdd;font-weight:600;">${getCombinedSignal(S.vix.value, S.vkospi?.value || 22)}</div>
+    <div style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:10px;color:var(--tx3);">
+      <div class="pulse" style="width:6px;height:6px;"></div>
+      <span>VIX·VKOSPI 업데이트: <b style="color:var(--tx2);font-family:var(--mono);">${DT(S.vix.at)}</b></span>
     </div>
   </div>
 
@@ -440,7 +540,8 @@ function pageHome(){
   <div class="alert-item" style="border-left-color:${z.col};">
     <span style="font-size:18px;">😱</span>
     <div>
-      <div style="font-size:12.5px;color:var(--tx2);">VIX ${S.vix.value} — ${z.name}. ${z.act[0]}</div>
+      <div style="font-size:12.5px;color:var(--tx2);">VIX ${S.vix.value} <b style="color:${z.col};">${z.name}</b> · VKOSPI ${S.vkospi?.value || 22} <b style="color:${zk.col};">${zk.name}</b></div>
+      <div style="font-size:11px;color:var(--tx3);margin-top:2px;">${getCombinedSignal(S.vix.value, S.vkospi?.value || 22)}</div>
       <div class="stamp" style="margin-top:3px;">분석 ${DT(S.vix.at)}</div>
     </div>
   </div>
@@ -459,7 +560,10 @@ function pageHome(){
 ══════════════════════════════════════════════════════ */
 function pageVix(){
   const v = S.vix.value;
+  const vk = S.vkospi?.value || 22;
   const z = GZ(v);
+  const zVix = z;
+  const zVkospi = GZ(vk);
   const pos = Math.min(Math.max((v/60)*100,2),98);
   const maxH = Math.max(...S.vix.hist);
   const diff = (v - S.vix.prev).toFixed(1);
@@ -471,12 +575,54 @@ function pageVix(){
     <button class="btn btn-g btn-sm" data-fn="openVixForm">수동 입력</button>
   </div>
 
+  <!-- 분석 시각 강조 표시 -->
+  <div class="card" style="margin-bottom:10px;padding:10px 14px;background:linear-gradient(135deg,#0d1828,#0f1d35);">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="pulse"></div>
+        <span style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;">최근 업데이트</span>
+      </div>
+      <span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--acc2);">${DT(S.vix.at)}</span>
+    </div>
+    <div style="font-size:10px;color:var(--tx3);margin-top:4px;text-align:right;">하루 1회 종가 기준 자동 갱신</div>
+  </div>
+
+  <!-- VIX × VKOSPI 듀얼 카드 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+    <div class="card" style="text-align:center;border-top:3px solid ${zVix.col};padding:14px 10px;">
+      <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;margin-bottom:6px;">🇺🇸 VIX (미국)</div>
+      <div style="font-size:32px;font-weight:900;font-family:var(--mono);color:${zVix.col};line-height:1;">${v}</div>
+      <div style="background:${zVix.col}22;color:${zVix.col};font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:4px;margin-top:6px;display:inline-block;">${zVix.name}</div>
+      <div style="font-size:10px;color:var(--tx2);margin-top:6px;">전일 <span style="color:${v>S.vix.prev?'var(--r)':'var(--g)'};font-family:var(--mono);font-weight:700;">${(v-S.vix.prev).toFixed(1)>0?"+":""}${(v-S.vix.prev).toFixed(1)}</span></div>
+    </div>
+    <div class="card" style="text-align:center;border-top:3px solid ${zVkospi.col};padding:14px 10px;">
+      <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;margin-bottom:6px;">🇰🇷 VKOSPI (한국)</div>
+      <div style="font-size:32px;font-weight:900;font-family:var(--mono);color:${zVkospi.col};line-height:1;">${vk}</div>
+      <div style="background:${zVkospi.col}22;color:${zVkospi.col};font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:4px;margin-top:6px;display:inline-block;">${zVkospi.name}</div>
+      <div style="font-size:10px;color:var(--tx2);margin-top:6px;">전일 <span style="color:${vk>(S.vkospi?.prev||vk)?'var(--r)':'var(--g)'};font-family:var(--mono);font-weight:700;">${(vk-(S.vkospi?.prev||vk)).toFixed(1)>0?"+":""}${(vk-(S.vkospi?.prev||vk)).toFixed(1)}</span></div>
+    </div>
+  </div>
+
+  <!-- 조합 신호 -->
+  <div class="card" style="margin-bottom:14px;background:linear-gradient(135deg,#0d1828,#111e33);">
+    <div style="font-size:10px;font-weight:700;color:var(--tx2);margin-bottom:6px;letter-spacing:.5px;">⚡ VIX × VKOSPI 조합 신호</div>
+    <div style="font-size:13px;font-weight:700;color:var(--acc2);line-height:1.5;margin-bottom:10px;">${getCombinedSignal(v, vk)}</div>
+    <div style="font-size:10.5px;color:var(--tx2);line-height:1.7;background:var(--s2);padding:8px 10px;border-radius:6px;">
+      💡 <b>해석 가이드</b><br>
+      • VIX↑ + VKOSPI↑ = 양국 동반 공포 → <b style="color:var(--g);">매수 적기</b><br>
+      • VIX↑ + VKOSPI평온 = 미국발 충격 → 외국인 매도 가능<br>
+      • VIX평온 + VKOSPI↑ = 한국 고유 리스크 → 국내 비중 축소<br>
+      • 양쪽 평온 = 정상 운용
+    </div>
+  </div>
+
   <div class="card">
     <div class="stamp" style="margin-bottom:12px;">
       <div class="pulse" style="margin-right:2px;"></div>분석 시각 ${DT(S.vix.at)}
     </div>
     <div style="text-align:center;margin-bottom:8px;">
-      <div class="vix-num" style="color:${z.col};">${v}</div>
+      <div style="font-size:10px;color:var(--tx2);font-weight:700;margin-bottom:4px;">VIX 상세 추이</div>
+      <div class="vix-num" style="color:${z.col};font-size:38px;">${v}</div>
       <span class="vix-badge" style="background:${z.col}22;color:${z.col};">${z.name}</span>
       <div style="font-size:11px;color:var(--tx3);margin-top:5px;font-family:var(--mono);">
         전일比 <span style="color:${diffColor};">${diff>0?"+":""}${diff}</span>
@@ -588,20 +734,39 @@ function pageVix(){
 
 window.openVixForm = function(){
   openDrawer(`
-    <div class="dtitle">🔧 VIX 수동 입력</div>
+    <div class="dtitle">😱 공포지수 수동 입력</div>
     <div class="fg"><label class="fl">📅 기준 날짜</label>
       <input class="fi" type="date" id="d-vix-date" value="${new Date().toISOString().split("T")[0]}"/>
     </div>
-    <div class="fg"><label class="fl">VIX 지수 값</label>
+    <div class="fg">
+      <label class="fl">🇺🇸 VIX (미국 변동성)</label>
       <input class="fi" type="number" step="0.1" id="d-vix-val" placeholder="예: 28.4" value="${S.vix.value}"/>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">CBOE 산출 · finance.yahoo.com에서 ^VIX 검색</div>
     </div>
-    <button class="btn btn-p btn-w" onclick="applyVix()">적용</button>
+    <div class="fg">
+      <label class="fl">🇰🇷 VKOSPI (한국 변동성)</label>
+      <input class="fi" type="number" step="0.1" id="d-vk-val" placeholder="예: 22.1" value="${S.vkospi?.value || 22}"/>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">한국거래소 산출 · KRX 또는 증권사 앱 조회</div>
+    </div>
+    <button class="btn btn-p btn-w" onclick="applyVix()">💾 저장</button>
   `);
 };
+
 window.applyVix = function(){
   const v = parseFloat(document.getElementById("d-vix-val").value);
-  if(isNaN(v)||v<=0) return;
-  S.vix = {...S.vix, prev:S.vix.value, value:v, hist:[...S.vix.hist.slice(1),v], at:ts()};
+  const k = parseFloat(document.getElementById("d-vk-val")?.value);
+  if(!isNaN(v) && v > 0){
+    S.vix = {...S.vix, prev:S.vix.value, value:v, hist:[...S.vix.hist.slice(1), v], at:ts()};
+  }
+  if(!isNaN(k) && k > 0){
+    S.vkospi = {
+      ...(S.vkospi || {prev:k, hist:[k,k,k,k,k,k,k,k,k,k]}),
+      prev: S.vkospi?.value || k,
+      value: k,
+      hist: [...(S.vkospi?.hist || [k,k,k,k,k,k,k,k,k]).slice(1), k],
+      at: ts()
+    };
+  }
   S.at = ts(); save(); closeDrawer(); renderPage();
 };
 
@@ -1434,11 +1599,15 @@ window.analyzePhoto = async function(){
 
   res.innerHTML = `
     <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--acc);">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         <div class="spinner"></div>
-        <span style="font-size:13px;font-weight:700;color:var(--acc2);">AI 분석 중... (${photoFiles.length}장 처리)</span>
+        <span style="font-size:13px;font-weight:700;color:var(--acc2);">AI 분석 중... (${photoFiles.length}장 통합 처리)</span>
       </div>
-      <div id="ai-step" style="font-size:11px;color:var(--tx2);">📤 이미지 인코딩 중...</div>
+      <div id="ai-step" style="font-size:11px;color:var(--tx2);margin-bottom:6px;">📤 이미지 인코딩 중...</div>
+      <div style="font-size:10px;color:var(--tx3);line-height:1.6;">
+        💡 ${photoTarget==='pension'?'퇴직연금/IRP':'주식 잔고'} 화면 분석 중<br>
+        ⏱️ 종목 많으면 30초 이상 소요될 수 있습니다
+      </div>
     </div>`;
 
   await new Promise(r=>setTimeout(r,400));
@@ -1644,24 +1813,59 @@ JSON 배열만 출력 (설명·코드블록 없이, 빠짐없이):
     }
 
     const txt = d.content?.find(c=>c.type==="text")?.text || "[]";
-    let items;
-    try {
-      items = JSON.parse(txt.replace(/```json|```/g,"").trim());
-    } catch {
+
+    // ── 다단계 JSON 파싱 ──
+    let items = null;
+    try { items = JSON.parse(txt.trim()); } catch(e) {}
+    if(!items){ try { items = JSON.parse(txt.replace(/```json|```/g,"").trim()); } catch(e) {} }
+    if(!items){
+      try {
+        const m = txt.match(/\[[\s\S]*\]/);
+        if(m) items = JSON.parse(m[0]);
+      } catch(e) {}
+    }
+    if(!items){
+      try {
+        const objs = txt.match(/\{[^{}]*\}/g);
+        if(objs && objs.length){
+          items = objs.map(o => { try { return JSON.parse(o); } catch { return null; } }).filter(Boolean);
+        }
+      } catch(e) {}
+    }
+
+    if(!items || (Array.isArray(items) && items.length === 0)){
       res.innerHTML = `
         <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--y);">
-          <div style="font-weight:700;color:var(--y);margin-bottom:8px;">⚠️ 분석 결과 파싱 실패</div>
-          <div style="font-size:11px;color:var(--tx3);margin-bottom:12px;">사진을 더 명확하게 다시 촬영하거나 수동 입력하세요.</div>
-          <button class="btn btn-p btn-w" onclick="manualFromPhoto()">✏️ 수동 입력</button>
+          <div style="font-weight:700;color:var(--y);margin-bottom:8px;">⚠️ AI 응답 파싱 실패</div>
+          <div style="font-size:11px;color:var(--tx2);margin-bottom:8px;line-height:1.6;">
+            가능한 원인:<br>
+            • 사진이 흐려서 텍스트 인식 실패<br>
+            • 종목 수가 너무 많아 응답 길이 초과<br>
+            • API 일시적 오류
+          </div>
+          <details style="font-size:10px;color:var(--tx3);margin-bottom:10px;">
+            <summary style="cursor:pointer;">AI 응답 보기 (디버그)</summary>
+            <pre style="background:var(--s2);padding:8px;border-radius:6px;overflow-x:auto;font-size:9.5px;margin-top:6px;max-height:200px;">${esc(txt.substring(0,500))}</pre>
+          </details>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-p" style="flex:1;" onclick="analyzePhoto()">🔄 다시 분석</button>
+            <button class="btn btn-g btn-sm" onclick="manualFromPhoto()">✏️ 수동</button>
+          </div>
         </div>`;
       return;
     }
 
-    if(!Array.isArray(items) || items.length===0){
+    if(!Array.isArray(items)) items = [items];
+
+    if(items.length === 0){
       res.innerHTML = `
         <div class="ai-box" style="margin-top:14px;border-left:3px solid var(--y);">
           <div style="font-weight:700;color:var(--y);margin-bottom:8px;">⚠️ 추출된 항목 없음</div>
-          <button class="btn btn-p btn-w" onclick="manualFromPhoto()">✏️ 수동 입력</button>
+          <div style="font-size:11px;color:var(--tx2);margin-bottom:10px;">사진에서 종목을 인식하지 못했습니다.</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-p" style="flex:1;" onclick="analyzePhoto()">🔄 다시 분석</button>
+            <button class="btn btn-g btn-sm" onclick="manualFromPhoto()">✏️ 수동</button>
+          </div>
         </div>`;
       return;
     }
@@ -2234,6 +2438,17 @@ renderTabbar();
 renderPage();
 setTimeout(bindPhotoEvents, 100);
 _lockShow();
+
+// 초기 로드 시 VIX/VKOSPI 자동 업데이트 시도
+setTimeout(() => {
+  if(typeof refreshIndices === 'function'){
+    refreshIndices().then(updated => {
+      if(updated && (currentPage === 'home' || currentPage === 'vix')){
+        renderPage();
+      }
+    });
+  }
+}, 1000);
 
 </script>
 </body>

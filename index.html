@@ -267,6 +267,7 @@ const DB = {
 const DEFAULT = {
   vix:{value:28.4,prev:24.1,hist:[18,20,22,19,24,28,31,28,26,28],at:new Date().toISOString()},
   vkospi:{value:22.1,prev:20.5,hist:[15,17,19,16,21,24,26,22,21,22],at:new Date().toISOString()},
+  loans:[],
   pension:{
     total:342000000,
     target:{ds:40,fs:30,bd:20,al:10},
@@ -300,6 +301,10 @@ const DEFAULT = {
 let S = DB.get("wo_data") || JSON.parse(JSON.stringify(DEFAULT));
 if(!S.vkospi){
   S.vkospi = JSON.parse(JSON.stringify(DEFAULT.vkospi));
+  save();
+}
+if(!S.loans){
+  S.loans = [];
   save();
 }
 let currentPage = "home";
@@ -492,9 +497,20 @@ function openDrawer(html){
 ══════════════════════════════════════════════════════ */
 function pageHome(){
   const stk = S.stocks.reduce((a,x)=>a+x.qty*x.cur,0);
-  const re  = S.realestate.reduce((a,x)=>a+x.cur,0);
-  const vh  = S.vehicles.reduce((a,x)=>a+x.cur,0);
-  const total = stk+re+vh+S.pension.total+(S.cash||0);
+  // 부동산: 자가/임대중은 cur, 전세/월세는 보증금
+  const re = S.realestate.reduce((a,r)=>{
+    const own = r.ownership || "자가";
+    if(own==="자가" || own==="임대중") return a + (Number(r.cur)||0);
+    return a + (Number(r.deposit)||0);
+  }, 0);
+  const vh  = S.vehicles.reduce((a,x)=>a+(Number(x.cur)||0),0);
+  // 부채: 신용대출 + 임대중 보증금
+  const loanTotal = (S.loans||[]).reduce((a,l)=>a+(Number(l.balance)||0), 0);
+  const rentedOutDep = S.realestate
+    .filter(r=>r.ownership==="임대중")
+    .reduce((a,r)=>a+(Number(r.deposit)||0), 0);
+  const totalDebt = loanTotal + rentedOutDep;
+  const total = stk+re+vh+S.pension.total+(S.cash||0) - totalDebt;
   const z = GZ(S.vix.value);
   const zk = GZ(S.vkospi?.value || 22);
 
@@ -528,6 +544,8 @@ function pageHome(){
       {l:"연금",v:S.pension.total,c:"#fbbf24"},
       {l:"차량",v:vh,c:"#a78bfa"},
       {l:"현금",v:S.cash||0,c:"#7eb8ff"},
+      ...(loanTotal > 0 ? [{l:"💳 대출",v:-loanTotal,c:"#f87171"}] : []),
+      ...(rentedOutDep > 0 ? [{l:"임대 보증금",v:-rentedOutDep,c:"#fb923c"}] : []),
     ].map(x=>`
       <div class="hcard" style="--hc:${x.c}">
         <div class="hc-lbl">${x.l}</div>
@@ -1123,22 +1141,38 @@ window.updateStock = function(id){
 ══════════════════════════════════════════════════════ */
 let assetTab="re";
 function pageAssets(){
-  // 자가/임대중: 평가가치 / 전세·월세: 보증금만
+  // 자가/임대중: 평가가치 / 전세·월세 거주: 보증금만 (자산)
   const reOwned = S.realestate.filter(r=>!r.ownership || r.ownership==="자가" || r.ownership==="임대중");
   const reRent  = S.realestate.filter(r=>r.ownership==="전세" || r.ownership==="월세");
-  const reTotal = reOwned.reduce((a,r)=>a+(Number(r.cur)||0), 0) + reRent.reduce((a,r)=>a+(Number(r.deposit)||0), 0);
+  const reAssetTotal = reOwned.reduce((a,r)=>a+(Number(r.cur)||0), 0) + reRent.reduce((a,r)=>a+(Number(r.deposit)||0), 0);
   const reCost  = reOwned.reduce((a,r)=>a+(Number(r.buy)||0), 0);
   const rePL    = reOwned.reduce((a,r)=>a+(Number(r.cur)||0)-(Number(r.buy)||0), 0);
+
+  // 임대 내준 부동산의 보증금은 부채 (반환 의무)
+  const rentedOutDeposits = S.realestate
+    .filter(r=>r.ownership==="임대중")
+    .reduce((a,r)=>a+(Number(r.deposit)||0), 0);
+
   const monthlyTotal = S.realestate.reduce((a,r)=>{
     if(r.ownership==="임대중") return a + (Number(r.monthlyRent)||0);
     if(r.ownership==="월세")   return a - (Number(r.monthlyRent)||0);
     return a;
   }, 0);
+
   const vhTotal  = S.vehicles.reduce((a,v)=>a+(Number(v.cur)||0), 0);
   const vhCost   = S.vehicles.reduce((a,v)=>a+(Number(v.buy)||0), 0);
   const vhDep    = vhTotal - vhCost;
   const cashTotal= Number(S.cash)||0;
-  const grandTotal = reTotal + vhTotal + cashTotal;
+
+  // 신용대출 등 부채
+  const loans = S.loans || [];
+  const loanTotal = loans.reduce((a,l)=>a+(Number(l.balance)||0), 0);
+
+  // 총자산 / 총부채 / 순자산
+  const grossAssets  = reAssetTotal + vhTotal + cashTotal;
+  const totalLiab    = loanTotal + rentedOutDeposits;
+  const netWorth     = grossAssets - totalLiab;
+  const grandTotal   = netWorth;
 
   return `
   <div class="sec-hd">
@@ -1147,38 +1181,77 @@ function pageAssets(){
   </div>
 
   <div class="card" style="background:linear-gradient(135deg,#0d1828,#111e33);border-color:rgba(79,128,255,.2);margin-bottom:12px;">
-    <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;">총 자산 (부동산 + 차량 + 현금)</div>
-    <div style="font-size:24px;font-weight:900;font-family:var(--mono);color:var(--acc2);">${B(grandTotal)}원</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:4px;">순자산 (자산 − 부채)</div>
+    <div style="font-size:24px;font-weight:900;font-family:var(--mono);color:${netWorth>=0?'var(--acc2)':'var(--r)'};">${B(netWorth)}원</div>
+    <div style="display:flex;gap:14px;margin-top:8px;font-size:11px;">
+      <span style="color:var(--tx2);">총자산 <b style="color:var(--g);font-family:var(--mono);">${B(grossAssets)}</b></span>
+      <span style="color:var(--tx2);">총부채 <b style="color:var(--r);font-family:var(--mono);">${B(totalLiab)}</b></span>
+    </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
     <div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px;border-top:2px solid var(--g);">
       <div style="font-size:9.5px;color:var(--tx2);margin-bottom:3px;">🏠 부동산</div>
-      <div style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--g);">${B(reTotal)}</div>
+      <div style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--g);">${B(reAssetTotal)}</div>
       <div style="font-size:9px;color:var(--tx2);margin-top:2px;">자가 ${reOwned.length} · 임차 ${reRent.length}</div>
       ${monthlyTotal!==0?`<div style="font-size:9px;color:${monthlyTotal>0?"var(--g)":"var(--r)"};margin-top:1px;">월 ${monthlyTotal>0?"+":""}${B(monthlyTotal)}</div>`:""}
     </div>
     <div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px;border-top:2px solid var(--p);">
-      <div style="font-size:9.5px;color:var(--tx3);margin-bottom:3px;">🚗 차량</div>
+      <div style="font-size:9.5px;color:var(--tx2);margin-bottom:3px;">🚗 차량</div>
       <div style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--p);">${B(vhTotal)}</div>
-      <div style="font-size:9px;color:var(--tx3);margin-top:2px;">감가 <span class="dn">${B(vhDep)}</span></div>
+      <div style="font-size:9px;color:var(--tx2);margin-top:2px;">감가 <span class="dn">${B(vhDep)}</span></div>
     </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
     <div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px;border-top:2px solid var(--acc2);">
-      <div style="font-size:9.5px;color:var(--tx3);margin-bottom:3px;">💵 현금</div>
+      <div style="font-size:9.5px;color:var(--tx2);margin-bottom:3px;">💵 현금</div>
       <div style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--acc2);">${B(cashTotal)}</div>
-      <div style="font-size:9px;color:var(--tx3);margin-top:2px;">예금/적금 합산</div>
+      <div style="font-size:9px;color:var(--tx2);margin-top:2px;">예금/적금 합산</div>
+    </div>
+    <div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px;border-top:2px solid var(--r);">
+      <div style="font-size:9.5px;color:var(--tx2);margin-bottom:3px;">💳 부채</div>
+      <div style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--r);">${B(totalLiab)}</div>
+      <div style="font-size:9px;color:var(--tx2);margin-top:2px;">대출 ${loans.length} · 임대보증금 ${rentedOutDeposits>0?B(rentedOutDeposits):"0"}</div>
     </div>
   </div>
   <div class="tabs-row">
     <div class="tab-pill ${assetTab==="re"?"on":""}" onclick="setAssetTab('re')">🏠 부동산</div>
     <div class="tab-pill ${assetTab==="vh"?"on":""}" onclick="setAssetTab('vh')">🚗 차량</div>
     <div class="tab-pill ${assetTab==="cash"?"on":""}" onclick="setAssetTab('cash')">💵 현금</div>
+    <div class="tab-pill ${assetTab==="loan"?"on":""}" onclick="setAssetTab('loan')">💳 대출</div>
   </div>
   <div id="asset-body">${renderAssetBody()}</div>`;
 }
 window.setAssetTab = t => { assetTab=t; const el=document.getElementById("asset-body"); if(el) el.innerHTML=renderAssetBody(); };
 
 function renderAssetBody(){
+  if(assetTab==="loan"){
+    const loans = S.loans || [];
+    if(loans.length === 0){
+      return `<div class="empty"><div class="empty-ico">💳</div><div>등록된 대출 없음</div><div style="font-size:11px;color:var(--tx3);margin-top:6px;">＋ 추가 버튼으로 신용대출/주담대/마이너스통장 등 등록</div></div>`;
+    }
+    return loans.map(l=>{
+      const monthlyInt = Math.round((Number(l.balance)||0) * (Number(l.rate)||0)/100/12);
+      const typeColor = {"신용대출":"#fb923c","주택담보대출":"#a78bfa","마이너스통장":"#f87171","기타":"#7088aa"}[l.type] || "#7088aa";
+      return `<div class="card card-sm" style="margin-bottom:10px;border-left:3px solid var(--r);">
+        <div style="display:flex;align-items:flex-start;margin-bottom:8px;">
+          <div style="flex:1;">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">
+              <b style="font-size:13px;">${esc(l.name)}</b>
+              <span style="background:${typeColor}22;color:${typeColor};border:1px solid ${typeColor}44;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700;">${l.type||"기타"}</span>
+            </div>
+            <div style="font-size:11px;color:var(--tx2);">잔액 <b style="color:var(--r);font-family:var(--mono);">${B(l.balance)}원</b></div>
+            <div style="font-size:11px;color:var(--tx2);">금리 <b style="color:var(--y);font-family:var(--mono);">${l.rate||0}%</b> · 월이자 약 <b style="color:var(--r);font-family:var(--mono);">${B(monthlyInt)}원</b></div>
+            ${l.dueDate ? `<div style="font-size:11px;color:var(--tx2);">만기 ${l.dueDate}</div>` : ""}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-g btn-xs" style="flex:1;" onclick="editLoan(${l.id})">✏️ 수정</button>
+          <button class="btn btn-rd btn-xs" style="flex:1;" onclick="delLoan(${l.id})">🗑️ 삭제</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
   if(assetTab==="re") return S.realestate.map((r,i)=>{
     const pl = parseFloat(PL(r.buy||0, r.cur||0));
     const own = r.ownership || "자가";
@@ -1195,7 +1268,7 @@ function renderAssetBody(){
           </div>
           ${isOwned ? `
             <div style="font-size:11px;color:var(--tx2);">취득 ${B(r.buy)}원 → 현재 ${B(r.cur)}원</div>
-            ${own==="임대중" && r.deposit ? `<div style="font-size:11px;color:var(--tx2);">임대 보증금 ${B(r.deposit)}원${r.monthlyRent?` · 월세 ${B(r.monthlyRent)}원`:""}</div>` : ""}
+            ${own==="임대중" && r.deposit ? `<div style="font-size:11px;color:var(--tx2);">임대 보증금 <b style="color:var(--r);">-${B(r.deposit)}원</b> <span style="font-size:9px;color:var(--r);">(부채)</span>${r.monthlyRent?` · 월세 ${B(r.monthlyRent)}원`:""}</div>` : ""}
             <div style="font-size:11px;color:var(--tx2);">임대수익률 <span style="color:var(--g);font-weight:700;">${r.ryd||0}%</span></div>
           ` : own==="전세" ? `
             <div style="font-size:11px;color:var(--tx2);">전세 보증금 <b style="color:var(--acc2);">${B(r.deposit||0)}원</b></div>
@@ -1250,11 +1323,130 @@ function renderAssetBody(){
 }
 window.saveCash = () => { S.cash=Number(document.getElementById("cash-inp").value)||0; S.at=ts(); save(); setAssetTab("cash"); };
 window.delRE = id => { S.realestate=S.realestate.filter(x=>x.id!==id); S.at=ts(); save(); renderPage(); };
+
+window.saveLoan = () => {
+  const nm = document.getElementById("l-nm").value.trim();
+  if(!nm){ alert("대출명을 입력하세요"); return; }
+  if(!S.loans) S.loans = [];
+  S.loans.push({
+    id: Date.now(),
+    name: nm,
+    type: document.getElementById("l-type").value,
+    balance: Number(document.getElementById("l-balance").value)||0,
+    rate: Number(document.getElementById("l-rate").value)||0,
+    dueDate: getDateValue("l-due"),
+    memo: document.getElementById("l-memo").value.trim()
+  });
+  S.at = ts(); save(); closeDrawer(); renderPage();
+};
+
+window.editLoan = id => {
+  const l = (S.loans||[]).find(x=>x.id===id);
+  if(!l) return;
+  openDrawer(`
+    <div class="dtitle">✏️ 대출 수정</div>
+    <div class="fg">
+      <label class="fl">대출 종류</label>
+      <select class="fs" id="el-type">
+        <option ${l.type==="신용대출"?"selected":""}>신용대출</option>
+        <option ${l.type==="주택담보대출"?"selected":""}>주택담보대출</option>
+        <option ${l.type==="마이너스통장"?"selected":""}>마이너스통장</option>
+        <option ${l.type==="전세자금대출"?"selected":""}>전세자금대출</option>
+        <option ${l.type==="자동차할부"?"selected":""}>자동차할부</option>
+        <option ${l.type==="기타"?"selected":""}>기타</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label class="fl">대출명/은행</label>
+      <input class="fi" type="text" id="el-nm" value="${esc(l.name).replace(/"/g,'&quot;')}"/>
+    </div>
+    <div class="fr">
+      <div class="fg">
+        <label class="fl">현재 잔액 (원)</label>
+        <input class="fi" type="number" id="el-balance" value="${l.balance||0}"/>
+      </div>
+      <div class="fg">
+        <label class="fl">금리 (%)</label>
+        <input class="fi" type="number" step="0.01" id="el-rate" value="${l.rate||0}"/>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">📅 만기일</label>
+      ${dateInputHtml("el-due", l.dueDate||"")}
+    </div>
+    <div class="fg">
+      <label class="fl">메모</label>
+      <input class="fi" type="text" id="el-memo" value="${esc(l.memo||"").replace(/"/g,'&quot;')}"/>
+    </div>
+    <button class="btn btn-p btn-w" onclick="saveEditLoan(${id})">💾 저장</button>
+  `);
+};
+
+window.saveEditLoan = id => {
+  const l = (S.loans||[]).find(x=>x.id===id);
+  if(!l) return;
+  l.name = document.getElementById("el-nm").value.trim() || l.name;
+  l.type = document.getElementById("el-type").value;
+  l.balance = Number(document.getElementById("el-balance").value)||0;
+  l.rate = Number(document.getElementById("el-rate").value)||0;
+  l.dueDate = getDateValue("el-due");
+  l.memo = document.getElementById("el-memo").value.trim();
+  S.at = ts(); save(); closeDrawer(); renderPage();
+};
+
+window.delLoan = id => {
+  if(!confirm("정말 이 대출을 삭제할까요?")) return;
+  S.loans = (S.loans||[]).filter(x=>x.id!==id);
+  S.at = ts(); save(); renderPage();
+};
 window.delVH = id => { S.vehicles=S.vehicles.filter(x=>x.id!==id); S.at=ts(); save(); renderPage(); };
 
 window.openAddAsset = function(){
   const isRE = assetTab==="re";
   const isVH = assetTab==="vh";
+  const isLoan = assetTab==="loan";
+
+  if(isLoan){
+    openDrawer(`
+      <div class="dtitle">💳 대출 추가</div>
+      <div class="fg">
+        <label class="fl">대출 종류</label>
+        <select class="fs" id="l-type">
+          <option>신용대출</option>
+          <option>주택담보대출</option>
+          <option>마이너스통장</option>
+          <option>전세자금대출</option>
+          <option>자동차할부</option>
+          <option>기타</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label class="fl">대출명/은행</label>
+        <input class="fi" type="text" id="l-nm" placeholder="예: 카카오뱅크 신용대출"/>
+      </div>
+      <div class="fr">
+        <div class="fg">
+          <label class="fl">현재 잔액 (원)</label>
+          <input class="fi" type="number" id="l-balance" placeholder="50000000"/>
+        </div>
+        <div class="fg">
+          <label class="fl">금리 (%)</label>
+          <input class="fi" type="number" step="0.01" id="l-rate" placeholder="4.5"/>
+        </div>
+      </div>
+      <div class="fg">
+        <label class="fl">📅 만기일 (선택)</label>
+        ${dateInputHtml("l-due", "")}
+      </div>
+      <div class="fg">
+        <label class="fl">메모 (선택)</label>
+        <input class="fi" type="text" id="l-memo" placeholder="용도, 변동/고정 금리 등"/>
+      </div>
+      <button class="btn btn-p btn-w" onclick="saveLoan()">💾 저장</button>
+    `);
+    return;
+  }
+
   if(!isRE&&!isVH) return;
   if(isRE) openDrawer(`
     <div class="dtitle">🏠 부동산 추가</div>
@@ -1591,36 +1783,66 @@ window.removePhoto = i => {
 };
 
 /* ── AI 분석 (CORS 우회: 분석 단계별 표시) ── */
-/* 이미지 리사이즈 — 8000px 한도 회피 + 용량 압축 */
+/* 이미지 리사이즈 — 한국어 텍스트 가독성 우선 + 8000px 한도 회피
+   - 한 변 최대 5000px (텍스트 OCR 적정 크기)
+   - JPEG 95% 고품질 (글자 뭉개짐 방지)
+   - 다단계 축소 (Lanczos 흉내) */
 async function resizeImage(file, maxDim, quality){
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
-      let { width, height } = img;
-      const original = `${width}×${height}`;
-      // 한 변이 maxDim 초과면 비율 유지하며 축소
-      if(width > maxDim || height > maxDim){
-        if(width > height){
-          height = Math.round(height * maxDim / width);
-          width = maxDim;
+      let { width: srcW, height: srcH } = img;
+      const original = `${srcW}×${srcH}`;
+      let targetW = srcW, targetH = srcH;
+
+      if(srcW > maxDim || srcH > maxDim){
+        if(srcW > srcH){
+          targetH = Math.round(srcH * maxDim / srcW);
+          targetW = maxDim;
         } else {
-          width = Math.round(width * maxDim / height);
-          height = maxDim;
+          targetW = Math.round(srcW * maxDim / srcH);
+          targetH = maxDim;
         }
       }
-      // canvas로 리사이즈
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+
+      // 다단계 축소 — 한 번에 50% 이하로 줄이지 않음 (글자 깨짐 방지)
+      let curW = srcW, curH = srcH;
+      let curCanvas = document.createElement("canvas");
+      curCanvas.width = curW;
+      curCanvas.height = curH;
+      curCanvas.getContext("2d").drawImage(img, 0, 0);
+
+      while(curW > targetW * 2){
+        const nextW = Math.max(targetW, Math.round(curW / 2));
+        const nextH = Math.max(targetH, Math.round(curH / 2));
+        const nextCanvas = document.createElement("canvas");
+        nextCanvas.width = nextW;
+        nextCanvas.height = nextH;
+        const nctx = nextCanvas.getContext("2d");
+        nctx.imageSmoothingEnabled = true;
+        nctx.imageSmoothingQuality = "high";
+        nctx.drawImage(curCanvas, 0, 0, nextW, nextH);
+        curCanvas = nextCanvas;
+        curW = nextW;
+        curH = nextH;
+      }
+
+      // 최종 크기로
+      const finalCanvas = document.createElement("canvas");
+      finalCanvas.width = targetW;
+      finalCanvas.height = targetH;
+      const fctx = finalCanvas.getContext("2d");
+      fctx.imageSmoothingEnabled = true;
+      fctx.imageSmoothingQuality = "high";
+      fctx.drawImage(curCanvas, 0, 0, targetW, targetH);
+
+      const dataUrl = finalCanvas.toDataURL("image/jpeg", quality);
       const b64 = dataUrl.split(",")[1];
       URL.revokeObjectURL(url);
       const sizeKB = Math.round(b64.length * 0.75 / 1024);
-      const info = original !== `${width}×${height}` ? `(${original} → ${width}×${height}, ${sizeKB}KB)` : `(${sizeKB}KB)`;
-      resolve({ b64, info, width, height });
+      const info = original !== `${targetW}×${targetH}` ? `(${original} → ${targetW}×${targetH}, ${sizeKB}KB)` : `(${sizeKB}KB)`;
+      resolve({ b64, info, width: targetW, height: targetH });
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -1642,10 +1864,11 @@ window.analyzePhoto = async function(){
         <div class="spinner"></div>
         <span style="font-size:13px;font-weight:700;color:var(--acc2);">AI 분석 중... (${photoFiles.length}장 통합 처리)</span>
       </div>
-      <div id="ai-step" style="font-size:11px;color:var(--tx2);margin-bottom:6px;">📤 이미지 인코딩 중...</div>
+      <div id="ai-step" style="font-size:11px;color:var(--tx2);margin-bottom:6px;">📤 이미지 처리 중...</div>
       <div style="font-size:10px;color:var(--tx3);line-height:1.6;">
         💡 ${photoTarget==='pension'?'퇴직연금/IRP':'주식 잔고'} 화면 분석 중<br>
-        ⏱️ 종목 많으면 30초 이상 소요될 수 있습니다
+        ⏱️ 종목 많으면 30초 이상 소요됩니다<br>
+        ⚠️ 화질이 흐리면 글자 인식이 부정확할 수 있어요
       </div>
     </div>`;
 
@@ -1662,7 +1885,7 @@ window.analyzePhoto = async function(){
       if(step) step.textContent = `📤 처리 중... (${i+1}/${photoFiles.length})`;
 
       // 이미지 리사이즈 (8000px 초과 방지 + 4MB 이하로 압축)
-      const result = await resizeImage(file, 7500, 0.85);
+      const result = await resizeImage(file, 5000, 0.95);
       allImages.push({mime: "image/jpeg", data: result.b64});
       if(step) step.textContent = `📤 처리 중... (${i+1}/${photoFiles.length}) ${result.info}`;
     }
@@ -1671,7 +1894,14 @@ window.analyzePhoto = async function(){
 
     const isStock = photoTarget === "stock";
     const prompt = isStock
-      ? `여러 장의 한국 증권사 앱/HTS 잔고 화면을 통합 분석합니다.
+      ? `한국 증권사 앱/HTS 잔고 화면을 정확히 분석합니다.
+
+🚨 절대 규칙:
+1. 이미지에 실제로 보이는 종목만 추출하세요
+2. 추측하거나 비슷한 종목명을 만들어내지 마세요
+3. 텍스트가 명확하지 않으면 그 항목은 제외하세요
+4. 종목명·수량·가격을 정확히 그대로 추출
+
 
 【화면 형태 A: KRX/HTS 표 형태】
 각 행: 종목명 | 평가손익 | 잔고수량 | 매입가
@@ -1723,12 +1953,17 @@ window.analyzePhoto = async function(){
 
 JSON 배열만 출력 (설명·코드블록 없이):
 [{"ticker":"","name":"","qty":주수,"avg":평균단가,"cur":현재가}]`
-      : `여러 장의 한국 퇴직연금/IRP 계좌 명세서를 통합 분석합니다.
-각 사진은 서로 다른 계좌일 수 있으며 모두 통합 추출하세요.
+      : `한국 퇴직연금/IRP 계좌 명세서 사진을 정확히 분석합니다.
+
+🚨 절대 규칙:
+1. 이미지에 실제로 보이는 종목/펀드만 추출하세요
+2. 추측하거나 비슷한 펀드명을 만들어내지 마세요
+3. 텍스트가 명확하지 않으면 그 항목은 제외하세요 (확실한 것만)
+4. 화면에 표시된 정확한 평가금액·수익률을 그대로 추출
 
 📋 화면 구성:
-"ETF/리츠", "펀드/채권", "원리금보장상품", "디폴트옵션" 등 섹션이 있을 수 있습니다.
-모든 섹션의 모든 종목을 빠짐없이 추출하세요.
+"ETF/리츠", "펀드/채권", "원리금보장상품" 등 섹션이 있을 수 있습니다.
+모든 섹션을 살펴보고 실제 보이는 종목만 추출하세요.
 
 🚨 컬럼 정의 (절대 혼동 금지):
 
@@ -2116,6 +2351,7 @@ window.saveAllAnalyzed = function(){
   } else {
     let pSkipped = [];
     let pWarnings = [];
+    let pNeedReview = false;
 
     lastAnalyzed.forEach(it=>{
       if(!it.name) return;
@@ -2151,8 +2387,9 @@ window.saveAllAnalyzed = function(){
 
     let pMsg = "";
     if(pSkipped.length) pMsg += "ℹ️ 제외됨: " + pSkipped.join(", ") + "\n\n";
-    if(pWarnings.length) pMsg += "⚠️ 비정상 항목 — 연금 탭에서 ✏️ 수정하세요:\n" + pWarnings.join("\n");
-    if(pMsg) setTimeout(()=>alert(pMsg), 800);
+    if(pWarnings.length) pMsg += "⚠️ 비정상 항목 — 연금 탭에서 ✏️ 수정하세요:\n" + pWarnings.join("\n") + "\n\n";
+    pMsg += "💡 저장 후 연금 탭에서 종목명·금액·수익률 부호를 한번 더 확인해주세요.\nAI는 글자가 흐릿하거나 +/- 부호를 잘못 읽을 수 있습니다.";
+    setTimeout(()=>alert(pMsg), 800);
   }
 
   S.at = ts(); save();

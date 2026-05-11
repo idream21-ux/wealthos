@@ -267,6 +267,7 @@ const DB = {
 const DEFAULT = {
   vix:{value:28.4,prev:24.1,hist:[18,20,22,19,24,28,31,28,26,28],at:new Date().toISOString()},
   vkospi:{value:22.1,prev:20.5,hist:[15,17,19,16,21,24,26,22,21,22],at:new Date().toISOString()},
+  sox:{value:1.5,prev:0.8,hist:[-2.1,-0.8,1.2,0.5,2.1,1.5,-0.3,1.8,2.3,1.5],at:new Date().toISOString()},
   loans:[],
   pension:{
     total:342000000,
@@ -305,6 +306,10 @@ if(!S.vkospi){
 }
 if(!S.loans){
   S.loans = [];
+  save();
+}
+if(!S.sox){
+  S.sox = JSON.parse(JSON.stringify(DEFAULT.sox));
   save();
 }
 let currentPage = "home";
@@ -398,6 +403,53 @@ JSON만 출력 (설명 없이):
     save();
     return false;
   }
+}
+
+function getSoxSignal(sox){
+  if(sox > 2) return {name:"강한 매수", color:"#00ffaa", action:"반도체 ETF +3~4% 이상 기대", icon:"🟢"};
+  if(sox > 1) return {name:"약한 매수", color:"#34d399", action:"현 포지션 유지, 소량 추가", icon:"🟢"};
+  if(sox > -1) return {name:"중립", color:"#fbbf24", action:"리밸런싱 실행 적기", icon:"🟡"};
+  if(sox > -2) return {name:"약한 매도", color:"#fb923c", action:"손절라인 확인, 추가 매수 금지", icon:"🟠"};
+  return {name:"강한 매도", color:"#ff4444", action:"MMF 전환 검토, 신규 매수 절대 금지", icon:"🔴"};
+}
+
+function getSoxVkospiMatrix(sox, vkospi){
+  // 5×4 매트릭스로 정확한 액션 반환
+  let vRow;
+  if(vkospi < 18) vRow = "탐욕";
+  else if(vkospi < 25) vRow = "중립";
+  else if(vkospi < 35) vRow = "공포";
+  else vRow = "극도공포";
+
+  let sRow;
+  if(sox > 1) sRow = "매수";
+  else if(sox > -1) sRow = "보합";
+  else sRow = "매도";
+
+  const matrix = {
+    "매수": {
+      "탐욕": "적극 매수 — 반도체 비중 ↑",
+      "중립": "분할 매수 — 목표 비중 확대",
+      "공포": "소량 분할 — 2~3회 나눠서",
+      "극도공포": "관망 — 역발상 소량만"
+    },
+    "보합": {
+      "탐욕": "현상 유지 — 리밸런싱",
+      "중립": "현상 유지 — 포지션 점검",
+      "공포": "관망 — 추가 매수 자제",
+      "극도공포": "방어 유지 — 손절라인 확인"
+    },
+    "매도": {
+      "탐욕": "익절 검토 — 수익 종목 정리",
+      "중립": "부분 익절 20~30%",
+      "공포": "손절 검토 — 손실 제한",
+      "극도공포": "현금 확보 — MMF 전환"
+    }
+  };
+  return {
+    vRow, sRow,
+    action: matrix[sRow][vRow]
+  };
 }
 
 function getCombinedSignal(vix, vkospi){
@@ -580,9 +632,12 @@ function pageHome(){
 function pageVix(){
   const v = S.vix.value;
   const vk = S.vkospi?.value || 22;
+  const sox = S.sox?.value || 1.5;
   const z = GZ(v);
   const zVix = z;
   const zVkospi = GZ(vk);
+  const soxSignal = getSoxSignal(sox);
+  const matrix = getSoxVkospiMatrix(sox, vk);
   const pos = Math.min(Math.max((v/60)*100,2),98);
   const maxH = Math.max(...S.vix.hist);
   const diff = (v - S.vix.prev).toFixed(1);
@@ -633,6 +688,112 @@ function pageVix(){
       • VIX평온 + VKOSPI↑ = 한국 고유 리스크 → 국내 비중 축소<br>
       • 양쪽 평온 = 정상 운용
     </div>
+  </div>
+
+  <!-- SOX 카드 (미국 반도체 지수 일일 변동률) -->
+  <div class="card" style="margin-bottom:14px;border-top:3px solid ${soxSignal.color};">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;margin-bottom:4px;">🇺🇸 SOX (필라델피아 반도체 지수)</div>
+        <div style="font-size:10px;color:var(--tx3);">미국 반도체 30개 종목 일일 변동률</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:28px;font-weight:900;font-family:var(--mono);color:${soxSignal.color};line-height:1;">${sox>0?"+":""}${sox.toFixed(1)}%</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:3px;">전일 ${S.sox?.prev>0?"+":""}${(S.sox?.prev||0).toFixed(1)}%</div>
+      </div>
+    </div>
+    <div style="background:${soxSignal.color}15;border-left:3px solid ${soxSignal.color};border-radius:6px;padding:10px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:16px;">${soxSignal.icon}</span>
+        <span style="font-size:13px;font-weight:700;color:${soxSignal.color};">${soxSignal.name}</span>
+      </div>
+      <div style="font-size:11px;color:var(--tx);">${soxSignal.action}</div>
+    </div>
+    <div style="background:var(--s2);border-radius:6px;padding:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--acc2);margin-bottom:6px;">📊 SOX → KOSPI 시차 신호 (1일 래그)</div>
+      <div style="font-size:10.5px;color:var(--tx2);line-height:1.7;">
+        SOX는 다음 거래일 KOSPI 반도체주를 <b style="color:var(--tx);">1.8~2.2배 증폭</b>해 선행합니다.<br>
+        오늘 SOX <b style="color:${soxSignal.color};">${sox>0?"+":""}${sox.toFixed(1)}%</b> →
+        내일 KOSPI 반도체 예상: <b style="color:${soxSignal.color};">${sox>0?"+":""}${(sox*1.8).toFixed(1)}~${(sox*2.2).toFixed(1)}%</b><br>
+        TIGER 반도체TOP10이 위험자산의 <b>45.22%</b>를 차지하므로 핵심 지표.
+      </div>
+    </div>
+  </div>
+
+  <!-- 실전 매매 매트릭스 (SOX × VKOSPI) -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title">⚡ 실전 매매 매트릭스 (SOX × VKOSPI)</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:10px;line-height:1.6;">
+      현재 SOX <b style="color:${soxSignal.color};">${sox>0?"+":""}${sox}%</b>
+      (${matrix.sRow}) × VKOSPI <b style="color:${zVkospi.col};">${vk}</b>
+      (${matrix.vRow})
+    </div>
+    <div style="background:var(--s2);border-radius:6px;padding:12px;margin-bottom:10px;border:2px solid var(--acc);">
+      <div style="font-size:10px;color:var(--tx3);margin-bottom:4px;">📌 현재 권장 액션</div>
+      <div style="font-size:14px;font-weight:700;color:var(--acc2);">→ ${matrix.action}</div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:10px;color:var(--tx2);">
+        <thead>
+          <tr style="background:var(--s2);">
+            <th style="padding:6px 4px;text-align:center;font-size:9px;color:var(--tx3);"></th>
+            <th style="padding:6px 4px;text-align:center;color:#00ffaa;font-size:9px;">탐욕<br>&lt;18</th>
+            <th style="padding:6px 4px;text-align:center;color:#fbbf24;font-size:9px;">중립<br>18-25</th>
+            <th style="padding:6px 4px;text-align:center;color:#fb923c;font-size:9px;">공포<br>25-35</th>
+            <th style="padding:6px 4px;text-align:center;color:#ff4444;font-size:9px;">극도공포<br>&gt;35</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:6px 4px;text-align:center;color:#34d399;font-weight:700;font-size:9px;background:var(--s2);">SOX&gt;+1%<br>매수</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매수'&&matrix.vRow==='탐욕'?'background:rgba(52,211,153,.25);font-weight:700;color:var(--g);':''}">적극<br>매수</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매수'&&matrix.vRow==='중립'?'background:rgba(52,211,153,.25);font-weight:700;color:var(--g);':''}">분할<br>매수</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매수'&&matrix.vRow==='공포'?'background:rgba(52,211,153,.25);font-weight:700;color:var(--g);':''}">소량<br>분할</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매수'&&matrix.vRow==='극도공포'?'background:rgba(52,211,153,.25);font-weight:700;color:var(--g);':''}">관망</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 4px;text-align:center;color:#fbbf24;font-weight:700;font-size:9px;background:var(--s2);">SOX±1%<br>중립</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='보합'&&matrix.vRow==='탐욕'?'background:rgba(251,191,36,.25);font-weight:700;color:var(--y);':''}">현상<br>유지</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='보합'&&matrix.vRow==='중립'?'background:rgba(251,191,36,.25);font-weight:700;color:var(--y);':''}">포지션<br>점검</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='보합'&&matrix.vRow==='공포'?'background:rgba(251,191,36,.25);font-weight:700;color:var(--y);':''}">추가<br>자제</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='보합'&&matrix.vRow==='극도공포'?'background:rgba(251,191,36,.25);font-weight:700;color:var(--y);':''}">방어<br>유지</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 4px;text-align:center;color:#f87171;font-weight:700;font-size:9px;background:var(--s2);">SOX&lt;-1%<br>매도</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매도'&&matrix.vRow==='탐욕'?'background:rgba(248,113,113,.25);font-weight:700;color:var(--r);':''}">익절<br>검토</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매도'&&matrix.vRow==='중립'?'background:rgba(248,113,113,.25);font-weight:700;color:var(--r);':''}">부분<br>익절</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매도'&&matrix.vRow==='공포'?'background:rgba(248,113,113,.25);font-weight:700;color:var(--r);':''}">손절<br>검토</td>
+            <td style="padding:6px 3px;text-align:center;${matrix.sRow==='매도'&&matrix.vRow==='극도공포'?'background:rgba(248,113,113,.25);font-weight:700;color:var(--r);':''}">현금<br>확보</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SOX 레벨별 상세 대응 -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title">🎯 SOX 레벨별 반도체 ETF 대응</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:10px;line-height:1.6;">
+      TIGER 반도체TOP10이 위험자산의 <b>45.22%</b>를 차지하므로 SOX는 가장 중요한 선행 지표.
+    </div>
+    ${[
+      {min:2, color:"#00ffaa", label:"SOX > +2%",  act:"강한 매수 — 반도체 ETF +3~4% 이상 기대"},
+      {min:1, color:"#34d399", label:"SOX +1~2%",  act:"약한 매수 — 현 포지션 유지, 소량 추가"},
+      {min:-1, color:"#fbbf24", label:"SOX ±1%",   act:"중립 — 리밸런싱 실행 적기"},
+      {min:-2, color:"#fb923c", label:"SOX -1~2%", act:"약한 매도 — 손절라인 확인, 추가 매수 금지"},
+      {min:-99,color:"#ff4444", label:"SOX < -2%", act:"강한 매도 — MMF 전환, 신규 매수 절대 금지"},
+    ].map(lv => {
+      const isActive = (lv.min===2 && sox>2) || (lv.min===1 && sox>1 && sox<=2) ||
+                       (lv.min===-1 && sox>-1 && sox<=1) || (lv.min===-2 && sox>-2 && sox<=-1) ||
+                       (lv.min===-99 && sox<=-2);
+      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;background:${isActive?'rgba(79,128,255,.1)':'var(--s2)'};border-radius:6px;margin-bottom:6px;border-left:3px solid ${lv.color};${isActive?'border:2px solid var(--acc);':''}">
+        <div style="width:6px;height:6px;border-radius:50%;background:${lv.color};margin-top:6px;flex-shrink:0;"></div>
+        <div style="flex:1;">
+          <div style="font-size:11.5px;font-weight:700;color:${lv.color};font-family:var(--mono);">${lv.label}${isActive?' ← 현재':''}</div>
+          <div style="font-size:10.5px;color:var(--tx2);margin-top:2px;">${lv.act}</div>
+        </div>
+      </div>`;
+    }).join("")}
   </div>
 
   <div class="card">
@@ -767,6 +928,11 @@ window.openVixForm = function(){
       <input class="fi" type="number" step="0.1" id="d-vk-val" placeholder="예: 22.1" value="${S.vkospi?.value || 22}"/>
       <div style="font-size:10px;color:var(--tx2);margin-top:4px;">한국거래소 산출 · KRX 또는 증권사 앱 조회</div>
     </div>
+    <div class="fg">
+      <label class="fl">🇺🇸 SOX (필라델피아 반도체 지수 일일 변동률 %)</label>
+      <input class="fi" type="number" step="0.1" id="d-sox-val" placeholder="예: +1.5" value="${S.sox?.value || 1.5}"/>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">전일 종가 대비 변동률 (%) · finance.yahoo.com에서 ^SOX 검색</div>
+    </div>
     <button class="btn btn-p btn-w" onclick="applyVix()">💾 저장</button>
   `);
 };
@@ -774,6 +940,7 @@ window.openVixForm = function(){
 window.applyVix = function(){
   const v = parseFloat(document.getElementById("d-vix-val").value);
   const k = parseFloat(document.getElementById("d-vk-val")?.value);
+  const sox = parseFloat(document.getElementById("d-sox-val")?.value);
   if(!isNaN(v) && v > 0){
     S.vix = {...S.vix, prev:S.vix.value, value:v, hist:[...S.vix.hist.slice(1), v], at:ts()};
   }
@@ -783,6 +950,15 @@ window.applyVix = function(){
       prev: S.vkospi?.value || k,
       value: k,
       hist: [...(S.vkospi?.hist || [k,k,k,k,k,k,k,k,k]).slice(1), k],
+      at: ts()
+    };
+  }
+  if(!isNaN(sox)){
+    S.sox = {
+      ...(S.sox || {prev:sox, hist:[sox,sox,sox,sox,sox,sox,sox,sox,sox,sox]}),
+      prev: S.sox?.value || sox,
+      value: sox,
+      hist: [...(S.sox?.hist || [sox,sox,sox,sox,sox,sox,sox,sox,sox]).slice(1), sox],
       at: ts()
     };
   }

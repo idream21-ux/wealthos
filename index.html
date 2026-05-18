@@ -367,10 +367,24 @@ const GZ = v => VZ.find(z=>v>=z.min&&v<z.max)||VZ[4];
 async function refreshIndices(){
   const apiKey = (localStorage.getItem("wo_apikey")||"").trim();
 
-  // 같은 날 이미 업데이트했으면 스킵 (지수는 일 1회 종가만 사용)
+  // 갱신 필요 여부 판단 (월요일/주말/장중 변동 대응)
   const lastDate = S.vix?.at ? new Date(S.vix.at).toDateString() : "";
-  const todayDate = new Date().toDateString();
-  if(lastDate === todayDate) return false;
+  const now = new Date();
+  const todayDate = now.toDateString();
+  const dayOfWeek = now.getDay();  // 0=일, 1=월
+  const hourOfDay = now.getHours();
+
+  // 같은 날 이미 갱신했으면 기본 스킵
+  if(lastDate === todayDate){
+    // 단, 월요일 오전 (장 마감 전)에 전일이 일요일이면 데이터 없으니 강제 갱신 허용
+    // 또한 장 마감 후 (오후 4시 이후) 갱신은 허용 (당일 종가 반영)
+    const isMondayMorningFromWeekend = (dayOfWeek === 1 && hourOfDay < 15);
+    const isAfterMarketClose = (hourOfDay >= 16);
+
+    if(!isMondayMorningFromWeekend && !isAfterMarketClose){
+      return false;
+    }
+  }
 
   // API 키 없으면 시각만 갱신 (값은 그대로)
   if(!apiKey){
@@ -456,25 +470,33 @@ JSON만 출력 (설명·코드블록 없이):
       const isValid = oldValue === 0 || dailyChange < 0.15;
 
       if(isValid){
-        // 52주 최고가 검증: 새 값보다 낮으면 새 값으로 갱신 (옛날 데이터 방지)
+        // 52주 최고가 검증
         let high = data.kospi52w;
         if(typeof high !== "number" || high < newValue){
           high = Math.max(S.kospi?.high52w || newValue, newValue);
         }
-        // 52주 최고가가 종가의 50% 미만이면 비정상 (예: 2,690 vs 7,500) → 종가 기준 재설정
         if(high < newValue * 0.9){
           high = newValue;
         }
+
+        // 같은 날 재갱신 처리 (월요일 장중 또는 장 마감 후)
+        const lastKospiDate = S.kospi?.at ? new Date(S.kospi.at).toDateString() : "";
+        const todayStr = new Date().toDateString();
+        const sameDay = (lastKospiDate === todayStr);
+
         S.kospi = {
           ...(S.kospi || {prev:newValue, hist:[newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue]}),
-          prev: oldValue || newValue,
+          // 같은 날 재갱신이면 prev는 유지 (전일 종가 보존)
+          // 다른 날 갱신이면 oldValue를 prev로 이동
+          prev: sameDay ? (S.kospi?.prev || oldValue || newValue) : (oldValue || newValue),
           value: newValue,
           high52w: high,
-          hist: [...(S.kospi?.hist || [newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue]).slice(1), newValue],
+          hist: sameDay
+            ? S.kospi?.hist || [newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue]
+            : [...(S.kospi?.hist || [newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue]).slice(1), newValue],
           at: ts()
         };
       } else {
-        // 일일 변동 15% 초과 = AI 오류로 간주, 갱신 거부 + 시각만 업데이트
         console.warn(`KOSPI 비정상 변동 거부: ${oldValue} → ${newValue} (${(dailyChange*100).toFixed(1)}%)`);
         if(S.kospi) S.kospi.at = ts();
       }
@@ -1467,9 +1489,131 @@ function pageCorrection(){
     </div>
   </div>
 
+  <!-- ════════ 레버리지 ETF 가이드 ════════ -->
+  <div style="font-size:13px;font-weight:800;color:var(--y);margin:20px 0 8px;letter-spacing:.5px;">⚡ 레버리지 ETF 투자 가이드</div>
+
+  <div class="card" style="margin-bottom:12px;background:linear-gradient(135deg,#1a1410,#2a1f15);border-color:rgba(251,191,36,.3);">
+    <div style="font-size:11px;font-weight:700;color:var(--y);margin-bottom:8px;letter-spacing:.5px;">🎯 삼성/하이닉스 2배 ETF (2026.05.22 또는 27 상장)</div>
+    <div style="font-size:11px;color:var(--tx2);line-height:1.7;">
+      • 8개 운용사 16종 동시 출시<br>
+      • 유입 예상: 1.7조~5.3조원<br>
+      • 사전 교육 의무 (1~2시간)<br>
+      • <b style="color:var(--y);">초고위험 단기 트레이딩 상품</b>
+    </div>
+  </div>
+
+  <!-- 신호 매트릭스 -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title">📊 진입 신호 매트릭스 (5개 지표)</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:10px;line-height:1.6;">
+      <b style="color:var(--g);">4개 이상 "진입 가능"</b> 시 매수,
+      <b style="color:var(--r);">2개 이상 "진입 금지"</b> 시 절대 매수 금지
+    </div>
+    ${(() => {
+      const v = S.vix?.value || 28;
+      const vk = S.vkospi?.value || 22;
+      const sox = S.sox?.value || 1.5;
+      const dailyPct2 = kospiPrev > 0 ? (kospi - kospiPrev) / kospiPrev * 100 : 0;
+
+      const signals = [
+        {label:"SOX", val:sox+"%", ok: sox > 1.5, mid: sox >= -1 && sox <= 1.5, bad: sox < -1, okLabel:"> +1.5%", badLabel:"< -1%"},
+        {label:"VKOSPI", val:vk, ok: vk < 22, mid: vk >= 22 && vk <= 28, bad: vk > 28, okLabel:"< 22", badLabel:"> 28"},
+        {label:"VIX", val:v, ok: v < 25, mid: v >= 25 && v <= 30, bad: v > 30, okLabel:"< 25", badLabel:"> 30"},
+        {label:"KOSPI 일일", val:dailyPct2.toFixed(2)+"%", ok: dailyPct2 >= 0, mid: dailyPct2 >= -1 && dailyPct2 < 0, bad: dailyPct2 < -2, okLabel:"≥ 0%", badLabel:"< -2%"}
+      ];
+
+      const okCount = signals.filter(s => s.ok).length;
+      const badCount = signals.filter(s => s.bad).length;
+
+      let verdict, vColor;
+      if(badCount >= 2){ verdict = "🚫 매수 절대 금지"; vColor = "var(--r)"; }
+      else if(okCount >= 3){ verdict = "✅ 매수 검토 가능"; vColor = "var(--g)"; }
+      else { verdict = "⚠️ 추가 신호 대기"; vColor = "var(--y)"; }
+
+      return signals.map(s => {
+        const status = s.ok ? "OK" : (s.bad ? "BAD" : "MID");
+        const color = s.ok ? "var(--g)" : (s.bad ? "var(--r)" : "var(--y)");
+        const icon = s.ok ? "✅" : (s.bad ? "❌" : "⚠️");
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--s2);border-radius:6px;margin-bottom:5px;border-left:2px solid ${color};">
+          <div style="flex:1;">
+            <div style="font-size:11px;font-weight:700;color:var(--tx);">${s.label}: <span style="font-family:var(--mono);color:${color};">${s.val}</span></div>
+            <div style="font-size:9.5px;color:var(--tx3);margin-top:1px;">진입 가능 ${s.okLabel} · 금지 ${s.badLabel}</div>
+          </div>
+          <div style="font-size:16px;">${icon}</div>
+        </div>`;
+      }).join("") +
+      `<div style="background:${vColor}15;border-left:3px solid ${vColor};border-radius:6px;padding:10px;margin-top:10px;">
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:2px;">📌 종합 판단 (가능 ${okCount} · 금지 ${badCount})</div>
+        <div style="font-size:13px;font-weight:700;color:${vColor};">${verdict}</div>
+      </div>`;
+    })()}
+  </div>
+
+  <!-- 진입 전략 -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title">🎯 단계별 진입 전략</div>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;font-size:11px;line-height:1.6;">
+      <div style="background:rgba(79,128,255,.15);color:var(--acc2);padding:4px 8px;border-radius:4px;font-weight:700;font-size:10px;text-align:center;">1주차</div>
+      <div style="color:var(--tx2);"><b style="color:var(--tx);">관망 only</b> — 거래량·스프레드 식별, 매수 금지</div>
+
+      <div style="background:rgba(79,128,255,.15);color:var(--acc2);padding:4px 8px;border-radius:4px;font-weight:700;font-size:10px;text-align:center;">2주차</div>
+      <div style="color:var(--tx2);">변동성 ±3% 이하 안정 확인, 매트릭스 4/5 시 1차 매수 (50만)</div>
+
+      <div style="background:rgba(79,128,255,.15);color:var(--acc2);padding:4px 8px;border-radius:4px;font-weight:700;font-size:10px;text-align:center;">3주차</div>
+      <div style="color:var(--tx2);">안정 시 추가 50만, 총 100만 한도</div>
+
+      <div style="background:rgba(52,211,153,.15);color:var(--g);padding:4px 8px;border-radius:4px;font-weight:700;font-size:10px;text-align:center;">익절</div>
+      <div style="color:var(--tx2);"><b style="color:var(--g);">+25% 도달 시 50% 청산, +30% 시 전량</b></div>
+
+      <div style="background:rgba(248,113,113,.15);color:var(--r);padding:4px 8px;border-radius:4px;font-weight:700;font-size:10px;text-align:center;">손절</div>
+      <div style="color:var(--tx2);"><b style="color:var(--r);">-15% 도달 시 무조건 전량 청산</b></div>
+    </div>
+  </div>
+
+  <!-- 종목 선택 -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title">🎯 16종 중 선택 가이드</div>
+    <div style="font-size:11px;color:var(--g);font-weight:700;margin-bottom:6px;">✅ 우선순위</div>
+    <div style="font-size:10.5px;color:var(--tx2);line-height:1.7;margin-bottom:10px;padding-left:8px;">
+      1. 삼성자산운용 KODEX (운용규모 최대)<br>
+      2. 미래에셋 TIGER (사용자 보유 라인업)<br>
+      3. 한국투자 ACE / KB자산운용 KBSTAR<br>
+    </div>
+    <div style="font-size:11px;color:var(--r);font-weight:700;margin-bottom:6px;">⛔ 피해야 할 것</div>
+    <div style="font-size:10.5px;color:var(--tx2);line-height:1.7;padding-left:8px;">
+      • 선물형 (키움·하나) — 롤오버 비용<br>
+      • 곱버스(인버스 2배) — 강세장에서 손실<br>
+      • 거래량 적은 ETF — 매도 어려움
+    </div>
+  </div>
+
+  <!-- 변동성 경고 -->
+  <div class="card" style="margin-bottom:12px;background:rgba(248,113,113,.05);border-color:rgba(248,113,113,.2);">
+    <div style="font-size:11px;font-weight:700;color:var(--r);margin-bottom:8px;">⚠️ 레버리지 ETF 핵심 위험</div>
+    <div style="font-size:11px;color:var(--tx2);line-height:1.8;">
+      ❌ <b style="color:var(--tx);">2배 수익은 일일 추적</b> — 누적이 아님<br>
+      ❌ <b style="color:var(--tx);">횡보장 가치 침식</b> — 1년 0%여도 -15~30% 손실<br>
+      ❌ <b style="color:var(--tx);">하루 ±10% 변동 가능</b> — 보유 ETF의 5배<br>
+      ❌ <b style="color:var(--tx);">물타기 절대 금지</b> — 손실 가속화<br>
+      ❌ <b style="color:var(--tx);">대출 매수 절대 금지</b>
+    </div>
+  </div>
+
+  <!-- 절세 팁 -->
+  <div class="card" style="margin-bottom:12px;background:linear-gradient(135deg,#0d1828,#0f1d35);">
+    <div style="font-size:11px;font-weight:700;color:var(--acc2);margin-bottom:8px;">💡 ISA 활용 절세</div>
+    <div style="font-size:11px;color:var(--tx2);line-height:1.7;">
+      • <b style="color:var(--g);">ISA 일반형</b>: 200만 비과세 + 9.9% 분리과세<br>
+      • 연 한도 2,000만원<br>
+      • 매매 차익 비과세 (현행)<br>
+      • <b style="color:var(--acc2);">ISA에서 매수가 가장 유리</b>
+    </div>
+  </div>
+
   <div style="font-size:10px;color:var(--tx3);text-align:center;margin-top:14px;line-height:1.6;">
-    📚 KOSPI·VIX·VKOSPI·SOX 자동 갱신 (하루 1회)<br>
-    ⚠️ 본 정보는 투자 자문이 아닌 시나리오 분석입니다
+    📚 KOSPI·VIX·VKOSPI·SOX 자동 갱신 (하루 1회 + 월요일/장후 특별 갱신)<br>
+    ⚠️ 본 정보는 투자 자문이 아닌 시나리오 분석입니다<br>
+    ⚠️ 레버리지 ETF는 초고위험 상품 — 매수대기금의 5% 이하 권장
   </div>
   `;
 }

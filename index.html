@@ -366,37 +366,181 @@ const GZ = v => VZ.find(z=>v>=z.min&&v<z.max)||VZ[4];
 /* 페이지 열 때마다 호출 - VIX/VKOSPI 갱신 시도 (하루 1회) */
 async function refreshIndices(){
   const apiKey = (localStorage.getItem("wo_apikey")||"").trim();
+  const alphaKey = (localStorage.getItem("wo_alphavantage_key")||"").trim();
 
-  // 갱신 필요 여부 판단 (월요일/주말/장중 변동 대응)
+  // 갱신 필요 여부 판단
   const lastDate = S.vix?.at ? new Date(S.vix.at).toDateString() : "";
   const now = new Date();
   const todayDate = now.toDateString();
-  const dayOfWeek = now.getDay();  // 0=일, 1=월
+  const dayOfWeek = now.getDay();
   const hourOfDay = now.getHours();
 
-  // 같은 날 이미 갱신했으면 기본 스킵
   if(lastDate === todayDate){
-    // 단, 월요일 오전 (장 마감 전)에 전일이 일요일이면 데이터 없으니 강제 갱신 허용
-    // 또한 장 마감 후 (오후 4시 이후) 갱신은 허용 (당일 종가 반영)
     const isMondayMorningFromWeekend = (dayOfWeek === 1 && hourOfDay < 15);
     const isAfterMarketClose = (hourOfDay >= 16);
-
     if(!isMondayMorningFromWeekend && !isAfterMarketClose){
       return false;
     }
   }
 
-  // API 키 없으면 시각만 갱신 (값은 그대로)
-  if(!apiKey){
-    S.vix.at = ts();
-    if(S.vkospi) S.vkospi.at = ts();
-    if(S.sox) S.sox.at = ts();
-    if(S.kospi) S.kospi.at = ts();
-    save();
+  // ─────────────────────────────────────────────────────────
+  // 전략 1: Yahoo Finance + CORS 프록시 (가장 신선한 데이터)
+  // ─────────────────────────────────────────────────────────
+  const yahooData = await tryYahooFinance();
+  if(yahooData && yahooData.success){
+    applyMarketData(yahooData);
     return true;
   }
 
-  // Claude API로 최신 VIX/VKOSPI 조회
+  // ─────────────────────────────────────────────────────────
+  // 전략 2: Alpha Vantage (사용자 키 있으면)
+  // ─────────────────────────────────────────────────────────
+  if(alphaKey){
+    const alphaData = await tryAlphaVantage(alphaKey);
+    if(alphaData && alphaData.success){
+      applyMarketData(alphaData);
+      return true;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // 전략 3: Claude API (학습 데이터 폴백)
+  // ─────────────────────────────────────────────────────────
+  if(apiKey){
+    const claudeData = await tryClaudeAPI(apiKey);
+    if(claudeData && claudeData.success){
+      applyMarketData(claudeData);
+      return true;
+    }
+  }
+
+  // 모두 실패 — 시각만 갱신
+  S.vix.at = ts();
+  if(S.vkospi) S.vkospi.at = ts();
+  if(S.sox) S.sox.at = ts();
+  if(S.kospi) S.kospi.at = ts();
+  save();
+  return false;
+}
+
+// Yahoo Finance를 CORS 프록시로 호출
+window.forceRefreshIndices = async function(){
+  // 캐시 무시하고 강제 갱신
+  const oldAt = S.vix?.at;
+  S.vix.at = new Date(0).toISOString();
+  if(S.vkospi) S.vkospi.at = new Date(0).toISOString();
+  if(S.sox) S.sox.at = new Date(0).toISOString();
+  if(S.kospi) S.kospi.at = new Date(0).toISOString();
+
+  const btn = event?.target;
+  if(btn){
+    btn.disabled = true;
+    btn.textContent = "⏳ 갱신 중...";
+  }
+
+  const updated = await refreshIndices();
+
+  if(btn){
+    btn.disabled = false;
+    btn.textContent = updated ? "✅ 갱신 완료" : "❌ 갱신 실패";
+    setTimeout(() => {
+      if(btn) btn.textContent = "🔄 강제 갱신";
+    }, 2000);
+  }
+
+  if(updated){
+    renderPage();
+  } else {
+    // 모두 실패 - 시각만 갱신, 알림
+    alert("자동 갱신 실패\n\n원인:\n• CORS 프록시 일시 차단\n• API 키 미설정\n• 네트워크 문제\n\n수동 입력을 권장합니다.");
+  }
+};
+
+async function tryYahooFinance(){
+  const symbols = "%5EVIX,%5ESOX,%5EKS11";  // ^VIX, ^SOX, ^KS11
+  const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`;
+
+  // 여러 프록시 시도
+  const proxies = [
+    "https://api.allorigins.win/raw?url=",
+    "https://corsproxy.io/?",
+    "https://cors-anywhere.herokuapp.com/"
+  ];
+
+  for(const proxy of proxies){
+    try{
+      const url = proxy === "https://cors-anywhere.herokuapp.com/"
+        ? proxy + yahooUrl
+        : proxy + encodeURIComponent(yahooUrl);
+
+      const resp = await fetch(url, {
+        method:"GET",
+        headers: {"Accept":"application/json"}
+      });
+      if(!resp.ok) continue;
+
+      const json = await resp.json();
+      const quotes = json.quoteResponse?.result;
+      if(!quotes || !Array.isArray(quotes) || quotes.length === 0) continue;
+
+      const result = { success: true, source: "Yahoo Finance (" + proxy.replace(/https:\/\//,"").split("/")[0] + ")" };
+
+      for(const q of quotes){
+        const sym = q.symbol;
+        const price = q.regularMarketPrice;
+        const prev = q.regularMarketPreviousClose;
+        const pctChange = q.regularMarketChangePercent;
+        const high52w = q.fiftyTwoWeekHigh;
+
+        if(sym === "^VIX" && typeof price === "number"){
+          result.vix = price;
+          result.vixPrev = prev;
+        }
+        if(sym === "^SOX" && typeof pctChange === "number"){
+          result.sox = pctChange;  // SOX는 일일 변동률
+          result.soxPrice = price;
+        }
+        if(sym === "^KS11" && typeof price === "number"){
+          result.kospi = price;
+          result.kospiPrev = prev;
+          if(typeof high52w === "number" && high52w > 0){
+            result.kospi52w = high52w;
+          }
+        }
+      }
+      console.log("✅ Yahoo Finance 성공:", result);
+      return result;
+    } catch(e) {
+      console.warn(`프록시 ${proxy} 실패:`, e.message);
+      continue;
+    }
+  }
+  return null;
+}
+
+// Alpha Vantage 호출 (사용자 키 필요)
+async function tryAlphaVantage(key){
+  try{
+    // VIX
+    const vixResp = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=VIX&apikey=${key}`);
+    const vixData = await vixResp.json();
+    const vixQuote = vixData["Global Quote"];
+
+    if(!vixQuote) return null;
+
+    const result = { success: true, source: "Alpha Vantage" };
+    const vix = parseFloat(vixQuote["05. price"]);
+    if(!isNaN(vix) && vix > 0) result.vix = vix;
+
+    return result;
+  } catch(e) {
+    console.warn("Alpha Vantage 실패:", e.message);
+    return null;
+  }
+}
+
+// Claude API 호출 (학습 데이터 기반)
+async function tryClaudeAPI(apiKey){
   try{
     const today = new Date().toISOString().split("T")[0];
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -410,114 +554,101 @@ async function refreshIndices(){
       body: JSON.stringify({
         model:"claude-sonnet-4-20250514",
         max_tokens:200,
-        messages:[{role:"user", content:`${today} 기준 가장 최근 거래일의 다음 5개 데이터를 알려주세요:
+        messages:[{role:"user", content:`${today} 기준 최근 거래일 데이터:
+- 코스피는 2026년 5월 현재 7,500~8,000선
+- VKOSPI 한국거래소 변동성지수
 
-🚨 매우 중요한 사실 (틀리지 마세요):
-- 코스피는 2025년부터 급등하여 2026년 5월 현재 7,000~8,000선입니다
-- 2024년 이전 박스피 시절의 2,000~3,000선 값을 답하면 안 됩니다
-- 최근 KOSPI 종가는 7,400~8,000 범위가 정상입니다
-- 52주 최고가도 7,500~8,100 범위가 정상입니다
-
-1. VIX: CBOE 산출 S&P500 변동성지수 (종가, 예: 28.4)
-2. VKOSPI: 한국거래소 KOSPI200 변동성지수 (종가, 예: 22.1)
-3. SOX: 필라델피아 반도체 지수 일일 변동률 % (전일 종가 대비, 예: +2.57)
-4. KOSPI: 코스피 지수 종가 (예: 7643) — 반드시 5000 이상이어야 함
-5. KOSPI 52주 최고가 (예: 7999) — 반드시 7000 이상이어야 함
-
-⚠️ SOX는 지수 값(예: 5800)이 아니라 일일 변동률 퍼센트입니다.
-⚠️ KOSPI는 일일 변동률이 아닌 종가 자체입니다.
-⚠️ 정확한 값을 모르면 추측 말고 합리적 범위에서 응답하세요.
-
-JSON만 출력 (설명·코드블록 없이):
-{"vix": 숫자, "vkospi": 숫자, "sox": 숫자, "kospi": 숫자, "kospi52w": 숫자}`}]
+JSON만 출력:
+{"vkospi": 숫자}`}]
       })
     });
     const d = await resp.json();
-    if(d.error) return false;
+    if(d.error) return null;
     const txt = d.content?.find(c=>c.type==="text")?.text || "";
     const m = txt.match(/\{[\s\S]*?\}/);
-    if(!m) return false;
+    if(!m) return null;
     const data = JSON.parse(m[0]);
 
-    if(data.vix && data.vix > 0){
-      S.vix = {...S.vix, prev:S.vix.value, value:data.vix, hist:[...S.vix.hist.slice(1), data.vix], at:ts()};
+    if(typeof data.vkospi === "number" && data.vkospi > 5 && data.vkospi < 80){
+      return { success: true, source: "Claude AI", vkospi: data.vkospi };
     }
-    if(data.vkospi && data.vkospi > 0){
-      S.vkospi = {
-        ...(S.vkospi || {prev:data.vkospi, hist:[data.vkospi]*10}),
-        prev: S.vkospi?.value || data.vkospi,
-        value: data.vkospi,
-        hist: [...(S.vkospi?.hist || [data.vkospi]*9).slice(1), data.vkospi],
-        at: ts()
-      };
-    }
-    // SOX는 음수도 가능하므로 typeof로 체크
-    if(typeof data.sox === "number" && Math.abs(data.sox) < 20){
-      S.sox = {
-        ...(S.sox || {prev:data.sox, hist:[data.sox,data.sox,data.sox,data.sox,data.sox,data.sox,data.sox,data.sox,data.sox,data.sox]}),
-        prev: S.sox?.value !== undefined ? S.sox.value : data.sox,
-        value: data.sox,
-        hist: [...(S.sox?.hist || [data.sox,data.sox,data.sox,data.sox,data.sox,data.sox,data.sox,data.sox,data.sox]).slice(1), data.sox],
-        at: ts()
-      };
-    }
-    // KOSPI 종가 처리 — 강력한 검증
-    if(typeof data.kospi === "number" && data.kospi > 1000 && data.kospi < 30000){
-      const oldValue = S.kospi?.value || 0;
-      const newValue = data.kospi;
-      const dailyChange = oldValue > 0 ? Math.abs((newValue - oldValue) / oldValue) : 0;
-
-      // 검증 조건:
-      // 1. 기존 값 없으면 통과
-      // 2. 일일 변동 15% 초과 = AI 오류 (옛날 값)
-      // 3. 거의 동일한 값 (변동 < 0.05%)이면 AI가 최신 데이터 없어 옛날 값 반환 = 의심
-      const isSuspiciouslyStatic = oldValue > 0 && dailyChange < 0.0005;
-      const isValid = oldValue === 0 || (dailyChange < 0.15 && !isSuspiciouslyStatic);
-
-      if(isValid){
-        // 52주 최고가 검증
-        let high = data.kospi52w;
-        if(typeof high !== "number" || high < newValue){
-          high = Math.max(S.kospi?.high52w || newValue, newValue);
-        }
-        if(high < newValue * 0.9){
-          high = newValue;
-        }
-
-        // 같은 날 재갱신 처리 (월요일 장중 또는 장 마감 후)
-        const lastKospiDate = S.kospi?.at ? new Date(S.kospi.at).toDateString() : "";
-        const todayStr = new Date().toDateString();
-        const sameDay = (lastKospiDate === todayStr);
-
-        S.kospi = {
-          ...(S.kospi || {prev:newValue, hist:[newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue]}),
-          // 같은 날 재갱신이면 prev는 유지 (전일 종가 보존)
-          // 다른 날 갱신이면 oldValue를 prev로 이동
-          prev: sameDay ? (S.kospi?.prev || oldValue || newValue) : (oldValue || newValue),
-          value: newValue,
-          high52w: high,
-          hist: sameDay
-            ? S.kospi?.hist || [newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue]
-            : [...(S.kospi?.hist || [newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue,newValue]).slice(1), newValue],
-          at: ts()
-        };
-      } else {
-        const reason = isSuspiciouslyStatic ? "거의 동일 값 (AI 최신 데이터 없음 추정)" : `비정상 변동 ${(dailyChange*100).toFixed(1)}%`;
-        console.warn(`KOSPI 갱신 거부: ${oldValue} → ${newValue} (${reason}) — 수동 입력 권장`);
-        if(S.kospi) S.kospi.at = ts();
-      }
-    }
-    save();
-    return true;
+    return null;
   } catch(e) {
-    // 실패해도 시각은 갱신
-    S.vix.at = ts();
-    if(S.vkospi) S.vkospi.at = ts();
-    if(S.sox) S.sox.at = ts();
-    if(S.kospi) S.kospi.at = ts();
-    save();
-    return false;
+    console.warn("Claude API 실패:", e.message);
+    return null;
   }
+}
+
+// 받아온 데이터 적용
+function applyMarketData(data){
+  console.log("📊 적용 데이터:", data.source, data);
+
+  if(typeof data.vix === "number" && data.vix > 5 && data.vix < 100){
+    const oldVix = S.vix?.value || data.vix;
+    S.vix = {
+      ...S.vix,
+      prev: data.vixPrev || oldVix,
+      value: data.vix,
+      hist: [...(S.vix.hist || []).slice(1), data.vix],
+      at: ts(),
+      source: data.source
+    };
+  }
+
+  if(typeof data.vkospi === "number" && data.vkospi > 5 && data.vkospi < 80){
+    const oldVk = S.vkospi?.value || data.vkospi;
+    S.vkospi = {
+      ...(S.vkospi || {hist:Array(10).fill(data.vkospi)}),
+      prev: oldVk,
+      value: data.vkospi,
+      hist: [...(S.vkospi?.hist || Array(9).fill(data.vkospi)).slice(1), data.vkospi],
+      at: ts(),
+      source: data.source
+    };
+  }
+
+  if(typeof data.sox === "number" && Math.abs(data.sox) < 20){
+    const oldSox = S.sox?.value !== undefined ? S.sox.value : data.sox;
+    S.sox = {
+      ...(S.sox || {hist:Array(10).fill(data.sox)}),
+      prev: oldSox,
+      value: data.sox,
+      hist: [...(S.sox?.hist || Array(9).fill(data.sox)).slice(1), data.sox],
+      at: ts(),
+      source: data.source
+    };
+  }
+
+  if(typeof data.kospi === "number" && data.kospi > 1000 && data.kospi < 30000){
+    const oldKospi = S.kospi?.value || data.kospi;
+    const dailyChange = oldKospi > 0 ? Math.abs((data.kospi - oldKospi) / oldKospi) : 0;
+    const isStatic = oldKospi > 0 && dailyChange < 0.0005 && data.source.includes("Claude");
+
+    if(!isStatic && dailyChange < 0.15){
+      let high = data.kospi52w;
+      if(typeof high !== "number" || high < data.kospi){
+        high = Math.max(S.kospi?.high52w || data.kospi, data.kospi);
+      }
+
+      const lastKospiDate = S.kospi?.at ? new Date(S.kospi.at).toDateString() : "";
+      const todayStr = new Date().toDateString();
+      const sameDay = (lastKospiDate === todayStr);
+
+      S.kospi = {
+        ...(S.kospi || {hist:Array(10).fill(data.kospi)}),
+        prev: sameDay ? (S.kospi?.prev || data.kospiPrev || oldKospi) : (data.kospiPrev || oldKospi),
+        value: data.kospi,
+        high52w: high,
+        hist: sameDay
+          ? S.kospi?.hist || Array(10).fill(data.kospi)
+          : [...(S.kospi?.hist || Array(9).fill(data.kospi)).slice(1), data.kospi],
+        at: ts(),
+        source: data.source
+      };
+    }
+  }
+
+  save();
 }
 
 function getSoxSignal(sox){
@@ -1275,7 +1406,7 @@ function pageCorrection(){
     <div class="sec-title">📉 조정 대응 전략</div>
   </div>
 
-  <!-- 자동 갱신 시각 -->
+  <!-- 자동 갱신 시각 + 데이터 소스 -->
   <div class="card" style="margin-bottom:10px;padding:10px 14px;background:linear-gradient(135deg,#0d1828,#0f1d35);">
     <div style="display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:8px;">
@@ -1284,8 +1415,13 @@ function pageCorrection(){
       </div>
       <span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--acc2);">${DT(S.kospi?.at || ts())}</span>
     </div>
-    <div style="font-size:10px;color:var(--tx3);margin-top:4px;line-height:1.6;">
-      ⚠️ AI는 실시간 시장 데이터 접근 제한 — KOSPI 값이 부정확하면 위 <b style="color:var(--y);">✏️ 수동 입력</b> 사용 권장
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;font-size:10px;">
+      <span style="color:var(--tx3);">
+        ${S.kospi?.source ? `📡 ${S.kospi.source}` : '⚠️ 데이터 소스 없음'}
+      </span>
+      <button onclick="forceRefreshIndices()" style="padding:4px 10px;background:transparent;border:1px solid var(--acc);color:var(--acc2);border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;">
+        🔄 강제 갱신
+      </button>
     </div>
   </div>
 
@@ -3491,6 +3627,27 @@ function pageSettings(){
   </div>
 
   <div class="card" style="margin-top:12px;">
+    <div class="card-title">📊 Alpha Vantage API 키 (실시간 시장 데이터)</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">
+      VIX, SOX, KOSPI 실시간 데이터 자동 갱신용 (선택 사항)<br>
+      <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color:var(--acc2);">www.alphavantage.co</a> 에서 무료 발급 (25호출/일)
+    </div>
+    <div class="fg">
+      <label class="fl">Alpha Vantage API 키</label>
+      <input class="fi" type="password" id="alpha-key" placeholder="예: ABCDEF123456" value="${(localStorage.getItem('wo_alphavantage_key')||'').replace(/"/g,'&quot;')}"/>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-p" style="flex:1;" onclick="saveAlphaKey()">💾 저장</button>
+      <button class="btn btn-rd btn-sm" onclick="if(confirm('삭제할까요?')){localStorage.removeItem('wo_alphavantage_key');alert('삭제됨');renderPage();}">🗑️</button>
+    </div>
+    <div id="alpha-key-msg" style="font-size:11px;text-align:center;margin-top:8px;min-height:14px;"></div>
+    <div style="margin-top:10px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:10px;color:var(--tx3);line-height:1.6;">
+      💡 <b>없어도 작동</b>: Yahoo Finance (무료 프록시) 우선 시도 → 실패 시 Alpha Vantage → Claude AI 순<br>
+      ⚠️ VKOSPI는 어떤 API에도 없어서 항상 수동 입력 필요
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
     <div class="card-title">🔒 비밀번호 변경</div>
     <div class="fg"><label class="fl">현재 비밀번호</label><input class="fi" type="password" id="pw-cur"/></div>
     <div class="fg"><label class="fl">새 비밀번호 (4자 이상)</label><input class="fi" type="password" id="pw-new"/></div>
@@ -3637,6 +3794,17 @@ window.saveApiKey = function(){
   try{ localStorage.setItem("wo_apikey", v); }catch(e){}
   m.style.color="#34d399"; m.textContent="✅ API 키 저장 완료!";
   setTimeout(()=>{ m.textContent=""; }, 2000);
+};
+
+window.saveAlphaKey = function(){
+  const v = (document.getElementById("alpha-key").value || "").trim();
+  const msg = document.getElementById("alpha-key-msg");
+  if(!v){
+    if(msg){ msg.textContent = "키가 비어있습니다"; msg.style.color = "var(--r)"; }
+    return;
+  }
+  try{ localStorage.setItem("wo_alphavantage_key", v); }catch(e){}
+  if(msg){ msg.textContent = "✅ Alpha Vantage 키 저장됨"; msg.style.color = "var(--g)"; }
 };
 
 window.changePw = function(){

@@ -465,9 +465,14 @@ JSON만 출력 (설명·코드블록 없이):
     if(typeof data.kospi === "number" && data.kospi > 1000 && data.kospi < 30000){
       const oldValue = S.kospi?.value || 0;
       const newValue = data.kospi;
-      // 기존 값이 있으면 일일 변동률 검증 (±15% 초과 = AI 오류로 간주)
       const dailyChange = oldValue > 0 ? Math.abs((newValue - oldValue) / oldValue) : 0;
-      const isValid = oldValue === 0 || dailyChange < 0.15;
+
+      // 검증 조건:
+      // 1. 기존 값 없으면 통과
+      // 2. 일일 변동 15% 초과 = AI 오류 (옛날 값)
+      // 3. 거의 동일한 값 (변동 < 0.05%)이면 AI가 최신 데이터 없어 옛날 값 반환 = 의심
+      const isSuspiciouslyStatic = oldValue > 0 && dailyChange < 0.0005;
+      const isValid = oldValue === 0 || (dailyChange < 0.15 && !isSuspiciouslyStatic);
 
       if(isValid){
         // 52주 최고가 검증
@@ -497,7 +502,8 @@ JSON만 출력 (설명·코드블록 없이):
           at: ts()
         };
       } else {
-        console.warn(`KOSPI 비정상 변동 거부: ${oldValue} → ${newValue} (${(dailyChange*100).toFixed(1)}%)`);
+        const reason = isSuspiciouslyStatic ? "거의 동일 값 (AI 최신 데이터 없음 추정)" : `비정상 변동 ${(dailyChange*100).toFixed(1)}%`;
+        console.warn(`KOSPI 갱신 거부: ${oldValue} → ${newValue} (${reason}) — 수동 입력 권장`);
         if(S.kospi) S.kospi.at = ts();
       }
     }
@@ -1021,6 +1027,63 @@ function pageVix(){
   </div>`;
 }
 
+window.quickUpdateKospi = function(){
+  openDrawer(`
+    <div class="dtitle">🇰🇷 KOSPI 빠른 입력</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:14px;line-height:1.6;padding:8px 10px;background:rgba(251,191,36,.1);border-radius:6px;">
+      💡 AI는 최신 시장 데이터 접근이 제한적입니다.<br>
+      네이버 금융·다음 증권에서 <b style="color:var(--y);">코스피 종가</b>를 확인해 직접 입력하세요.
+    </div>
+    <div class="fg">
+      <label class="fl">🇰🇷 KOSPI 종가 (오늘 또는 최근 거래일)</label>
+      <input class="fi" type="number" step="0.01" id="qk-kospi" placeholder="예: 7940" value="${S.kospi?.value || ''}"/>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">실시간 검색: "코스피 종가" 또는 KRX 앱</div>
+    </div>
+    <div class="fg">
+      <label class="fl">📊 KOSPI 52주 최고가 (선택)</label>
+      <input class="fi" type="number" step="0.01" id="qk-high" placeholder="예: 8000" value="${S.kospi?.high52w || ''}"/>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">기존 값(${S.kospi?.high52w || 0})보다 높은 값만 갱신됨</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-p btn-w" style="flex:1;" onclick="applyQuickKospi()">💾 KOSPI 저장</button>
+    </div>
+  `);
+};
+
+window.applyQuickKospi = function(){
+  const kospi = parseFloat(document.getElementById("qk-kospi").value);
+  const kospiHigh = parseFloat(document.getElementById("qk-high")?.value);
+
+  if(isNaN(kospi) || kospi < 1000){
+    alert("올바른 KOSPI 값을 입력하세요 (예: 7940)");
+    return;
+  }
+
+  // 같은 날 다시 입력하는 경우 prev 보존, 다른 날이면 prev 이동
+  const lastKospiDate = S.kospi?.at ? new Date(S.kospi.at).toDateString() : "";
+  const todayStr = new Date().toDateString();
+  const sameDay = (lastKospiDate === todayStr);
+
+  let high = S.kospi?.high52w || kospi;
+  if(!isNaN(kospiHigh) && kospiHigh > 0){
+    high = Math.max(high, kospiHigh, kospi);
+  } else {
+    high = Math.max(high, kospi);
+  }
+
+  S.kospi = {
+    ...(S.kospi || {prev:kospi, hist:[kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi]}),
+    prev: sameDay ? (S.kospi?.prev || kospi) : (S.kospi?.value || kospi),
+    value: kospi,
+    high52w: high,
+    hist: sameDay
+      ? (S.kospi?.hist || [kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi])
+      : [...(S.kospi?.hist || [kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi]).slice(1), kospi],
+    at: ts()
+  };
+  S.at = ts(); save(); closeDrawer(); renderPage();
+};
+
 window.openVixForm = function(){
   openDrawer(`
     <div class="dtitle">😱 공포지수 수동 입력</div>
@@ -1221,7 +1284,9 @@ function pageCorrection(){
       </div>
       <span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--acc2);">${DT(S.kospi?.at || ts())}</span>
     </div>
-    <div style="font-size:10px;color:var(--tx3);margin-top:4px;text-align:right;">하루 1회 KOSPI 종가 자동 분석</div>
+    <div style="font-size:10px;color:var(--tx3);margin-top:4px;line-height:1.6;">
+      ⚠️ AI는 실시간 시장 데이터 접근 제한 — KOSPI 값이 부정확하면 위 <b style="color:var(--y);">✏️ 수동 입력</b> 사용 권장
+    </div>
   </div>
 
   <!-- KOSPI 현황 (큰 카드) -->
@@ -1238,6 +1303,9 @@ function pageCorrection(){
         </div>
       </div>
     </div>
+    <button onclick="quickUpdateKospi()" style="width:100%;padding:8px;background:linear-gradient(135deg,#4f80ff,#3568cc);border:none;border-radius:6px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;margin-bottom:10px;">
+      ✏️ KOSPI 수동 입력 (정확한 값으로 갱신)
+    </button>
 
     <!-- 52주 최고치 대비 -->
     <div style="background:var(--s2);border-radius:8px;padding:10px 12px;margin-bottom:10px;">

@@ -425,34 +425,147 @@ async function refreshIndices(){
 
 // Yahoo Finance를 CORS 프록시로 호출
 window.forceRefreshIndices = async function(){
-  // 캐시 무시하고 강제 갱신
-  const oldAt = S.vix?.at;
-  S.vix.at = new Date(0).toISOString();
-  if(S.vkospi) S.vkospi.at = new Date(0).toISOString();
-  if(S.sox) S.sox.at = new Date(0).toISOString();
-  if(S.kospi) S.kospi.at = new Date(0).toISOString();
+  // 디버그 모드로 각 시도 결과 화면 표시
+  openDrawer(`
+    <div class="dtitle">🔍 데이터 소스 진단</div>
+    <div id="debug-log" style="background:var(--s2);border-radius:6px;padding:12px;font-size:11px;font-family:var(--mono);color:var(--tx);line-height:1.7;max-height:400px;overflow-y:auto;">
+      <div style="color:var(--acc2);">⏳ 진단 시작...</div>
+    </div>
+    <button class="btn btn-p btn-w" style="margin-top:12px;" onclick="closeDrawer()">닫기</button>
+  `);
 
-  const btn = event?.target;
-  if(btn){
-    btn.disabled = true;
-    btn.textContent = "⏳ 갱신 중...";
+  const log = (msg, color) => {
+    const el = document.getElementById('debug-log');
+    if(el){
+      el.innerHTML += `<div style="color:${color||'var(--tx2)'};margin-top:4px;">${msg}</div>`;
+      el.scrollTop = el.scrollHeight;
+    }
+  };
+
+  log("📡 1단계: Yahoo Finance + CORS 프록시 시도", "var(--acc2)");
+
+  // 프록시 직접 테스트
+  const yahooUrl = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=%5EVIX,%5ESOX,%5EKS11";
+  const proxies = [
+    {name: "allorigins.win", build: u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u)},
+    {name: "corsproxy.io", build: u => "https://corsproxy.io/?" + encodeURIComponent(u)},
+    {name: "thingproxy.freeboard.io", build: u => "https://thingproxy.freeboard.io/fetch/" + u},
+    {name: "cors.eu.org", build: u => "https://cors.eu.org/" + u},
+  ];
+
+  let yahooSuccess = false;
+  for(const proxy of proxies){
+    const proxyUrl = proxy.build(yahooUrl);
+    log(`  ▸ ${proxy.name} 시도...`, "var(--tx3)");
+
+    try {
+      const resp = await fetch(proxyUrl, {method:"GET", headers:{"Accept":"application/json"}});
+      log(`    HTTP 상태: ${resp.status} ${resp.statusText}`, resp.ok ? "var(--g)" : "var(--r)");
+
+      if(!resp.ok){
+        log(`    ❌ 응답 실패`, "var(--r)");
+        continue;
+      }
+
+      const text = await resp.text();
+      log(`    ✓ 응답 ${text.length}바이트 수신`, "var(--g)");
+
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch(e) {
+        log(`    ❌ JSON 파싱 실패: ${e.message}`, "var(--r)");
+        log(`    응답 일부: ${text.substring(0, 100)}`, "var(--tx3)");
+        continue;
+      }
+
+      const quotes = json.quoteResponse?.result;
+      if(!quotes || quotes.length === 0){
+        log(`    ❌ quoteResponse.result 없음`, "var(--r)");
+        log(`    응답 구조: ${JSON.stringify(json).substring(0,200)}`, "var(--tx3)");
+        continue;
+      }
+
+      log(`    ✅ ${quotes.length}개 종목 데이터 수신`, "var(--g)");
+
+      for(const q of quotes){
+        log(`      • ${q.symbol}: ${q.regularMarketPrice} (${q.regularMarketChangePercent?.toFixed(2)}%)`, "var(--tx)");
+      }
+
+      // 실제 적용
+      const result = { success: true, source: "Yahoo (" + proxy.name + ")" };
+      for(const q of quotes){
+        if(q.symbol === "^VIX" && typeof q.regularMarketPrice === "number"){
+          result.vix = q.regularMarketPrice;
+          result.vixPrev = q.regularMarketPreviousClose;
+        }
+        if(q.symbol === "^SOX" && typeof q.regularMarketChangePercent === "number"){
+          result.sox = q.regularMarketChangePercent;
+        }
+        if(q.symbol === "^KS11" && typeof q.regularMarketPrice === "number"){
+          result.kospi = q.regularMarketPrice;
+          result.kospiPrev = q.regularMarketPreviousClose;
+          if(typeof q.fiftyTwoWeekHigh === "number") result.kospi52w = q.fiftyTwoWeekHigh;
+        }
+      }
+
+      applyMarketData(result);
+      log(`  ✅ ${proxy.name} 성공 — 데이터 적용 완료`, "var(--g)");
+      yahooSuccess = true;
+      break;
+
+    } catch(e) {
+      log(`    ❌ 예외 발생: ${e.message}`, "var(--r)");
+      // 가능한 원인 표시
+      if(e.message.includes("Failed to fetch")){
+        log(`    원인: CORS 차단 또는 네트워크 차단`, "var(--y)");
+      }
+      continue;
+    }
   }
 
-  const updated = await refreshIndices();
+  if(!yahooSuccess){
+    log("\n📡 2단계: Alpha Vantage 시도", "var(--acc2)");
+    const alphaKey = (localStorage.getItem("wo_alphavantage_key")||"").trim();
 
-  if(btn){
-    btn.disabled = false;
-    btn.textContent = updated ? "✅ 갱신 완료" : "❌ 갱신 실패";
-    setTimeout(() => {
-      if(btn) btn.textContent = "🔄 강제 갱신";
-    }, 2000);
+    if(!alphaKey){
+      log("  ⚠️ Alpha Vantage 키 미등록 — 설정 페이지에서 등록 가능", "var(--y)");
+    } else {
+      try {
+        const r = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=VIX&apikey=${alphaKey}`);
+        log(`  HTTP 상태: ${r.status}`, r.ok ? "var(--g)" : "var(--r)");
+        if(r.ok){
+          const d = await r.json();
+          log(`  응답: ${JSON.stringify(d).substring(0, 200)}`, "var(--tx2)");
+          const quote = d["Global Quote"];
+          if(quote && quote["05. price"]){
+            const vix = parseFloat(quote["05. price"]);
+            applyMarketData({success: true, source: "Alpha Vantage", vix: vix});
+            log(`  ✅ VIX ${vix} 적용`, "var(--g)");
+          } else if(d.Note){
+            log(`  ⚠️ API 한도 초과: ${d.Note}`, "var(--y)");
+          } else {
+            log(`  ❌ 응답 형식 이상`, "var(--r)");
+          }
+        }
+      } catch(e) {
+        log(`  ❌ 예외: ${e.message}`, "var(--r)");
+      }
+    }
   }
 
-  if(updated){
-    renderPage();
+  log("\n📊 최종 결과", "var(--acc2)");
+  log(`  VIX: ${S.vix?.value} (${S.vix?.source || '소스 없음'})`, "var(--tx)");
+  log(`  VKOSPI: ${S.vkospi?.value} (${S.vkospi?.source || '소스 없음'})`, "var(--tx)");
+  log(`  SOX: ${S.sox?.value}% (${S.sox?.source || '소스 없음'})`, "var(--tx)");
+  log(`  KOSPI: ${S.kospi?.value} (${S.kospi?.source || '소스 없음'})`, "var(--tx)");
+
+  if(!yahooSuccess){
+    log("\n💡 권장 사항", "var(--y)");
+    log("  CORS 프록시가 모두 차단되어 자동 갱신 불가합니다.", "var(--tx2)");
+    log("  '✏️ KOSPI 수동 입력' 버튼 사용 권장.", "var(--tx2)");
   } else {
-    // 모두 실패 - 시각만 갱신, 알림
-    alert("자동 갱신 실패\n\n원인:\n• CORS 프록시 일시 차단\n• API 키 미설정\n• 네트워크 문제\n\n수동 입력을 권장합니다.");
+    renderPage();
   }
 };
 

@@ -383,36 +383,53 @@ async function refreshIndices(){
     }
   }
 
+  let anySuccess = false;
+
   // ─────────────────────────────────────────────────────────
-  // 전략 1: Yahoo Finance + CORS 프록시 (가장 신선한 데이터)
+  // 전략 1: Yahoo Finance v8 Chart + CORS 프록시
   // ─────────────────────────────────────────────────────────
   const yahooData = await tryYahooFinance();
   if(yahooData && yahooData.success){
     applyMarketData(yahooData);
-    return true;
+    anySuccess = true;
   }
 
   // ─────────────────────────────────────────────────────────
-  // 전략 2: Alpha Vantage (사용자 키 있으면)
+  // 전략 2: Alpha Vantage (사용자 키 있으면, VIX 보조)
   // ─────────────────────────────────────────────────────────
-  if(alphaKey){
+  if(alphaKey && !S.vix?.source?.includes("Yahoo")){
     const alphaData = await tryAlphaVantage(alphaKey);
     if(alphaData && alphaData.success){
       applyMarketData(alphaData);
-      return true;
+      anySuccess = true;
     }
   }
 
   // ─────────────────────────────────────────────────────────
-  // 전략 3: Claude API (학습 데이터 폴백)
+  // 전략 3: Claude API (VKOSPI 항상, 다른 것도 폴백)
   // ─────────────────────────────────────────────────────────
   if(apiKey){
     const claudeData = await tryClaudeAPI(apiKey);
     if(claudeData && claudeData.success){
-      applyMarketData(claudeData);
-      return true;
+      // Yahoo가 이미 채운 데이터는 덮어쓰지 않고, 비어있는 것만 채움
+      const merged = {success: true, source: claudeData.source};
+      // VKOSPI는 항상 Claude에서 (Yahoo에 없음)
+      if(claudeData.vkospi) merged.vkospi = claudeData.vkospi;
+      // 나머지는 Yahoo에 이미 적용됐으면 스킵 (소스 비교)
+      if(!S.vix?.source?.includes("Yahoo") && claudeData.vix) merged.vix = claudeData.vix;
+      if(!S.sox?.source?.includes("Yahoo") && claudeData.sox !== undefined) merged.sox = claudeData.sox;
+      if(!S.kospi?.source?.includes("Yahoo") && claudeData.kospi){
+        merged.kospi = claudeData.kospi;
+        if(claudeData.kospi52w) merged.kospi52w = claudeData.kospi52w;
+      }
+      if(merged.vix || merged.vkospi || merged.sox !== undefined || merged.kospi){
+        applyMarketData(merged);
+        anySuccess = true;
+      }
     }
   }
+
+  if(anySuccess) return true;
 
   // 모두 실패 — 시각만 갱신
   S.vix.at = ts();
@@ -444,88 +461,116 @@ window.forceRefreshIndices = async function(){
 
   log("📡 1단계: Yahoo Finance + CORS 프록시 시도", "var(--acc2)");
 
-  // 프록시 직접 테스트
-  const yahooUrl = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=%5EVIX,%5ESOX,%5EKS11";
+  // 야후 v8 차트 API (v7 quote는 2025년 차단됨)
   const proxies = [
     {name: "allorigins.win", build: u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u)},
     {name: "corsproxy.io", build: u => "https://corsproxy.io/?" + encodeURIComponent(u)},
-    {name: "thingproxy.freeboard.io", build: u => "https://thingproxy.freeboard.io/fetch/" + u},
-    {name: "cors.eu.org", build: u => "https://cors.eu.org/" + u},
   ];
 
   let yahooSuccess = false;
+  const symbols = [
+    {key:"VIX", code:"%5EVIX"},
+    {key:"SOX", code:"%5ESOX"},
+    {key:"KOSPI", code:"%5EKS11"}
+  ];
+
   for(const proxy of proxies){
-    const proxyUrl = proxy.build(yahooUrl);
-    log(`  ▸ ${proxy.name} 시도...`, "var(--tx3)");
+    log(`  ▸ ${proxy.name} 시도 (v8 차트 API)...`, "var(--tx3)");
+    let proxyWorks = false;
+    const proxyResult = { success: true, source: "Yahoo (" + proxy.name + ")" };
 
-    try {
-      const resp = await fetch(proxyUrl, {method:"GET", headers:{"Accept":"application/json"}});
-      log(`    HTTP 상태: ${resp.status} ${resp.statusText}`, resp.ok ? "var(--g)" : "var(--r)");
-
-      if(!resp.ok){
-        log(`    ❌ 응답 실패`, "var(--r)");
-        continue;
-      }
-
-      const text = await resp.text();
-      log(`    ✓ 응답 ${text.length}바이트 수신`, "var(--g)");
-
-      let json;
+    for(const sym of symbols){
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym.code}?range=5d&interval=1d`;
       try {
-        json = JSON.parse(text);
+        const resp = await fetch(proxy.build(yahooUrl), {method:"GET"});
+        if(!resp.ok){
+          log(`    ${sym.key}: HTTP ${resp.status}`, "var(--r)");
+          continue;
+        }
+        const text = await resp.text();
+        const json = JSON.parse(text);
+        const data = json.chart?.result?.[0];
+        if(!data){
+          if(json.chart?.error){
+            log(`    ${sym.key}: ${json.chart.error.description || 'API 차단'}`, "var(--r)");
+          } else {
+            log(`    ${sym.key}: 데이터 없음`, "var(--r)");
+          }
+          continue;
+        }
+
+        const meta = data.meta;
+        const closes = data.indicators?.quote?.[0]?.close || [];
+        const validCloses = closes.filter(v => v !== null);
+        let lastClose = meta?.regularMarketPrice;
+        let prevClose = meta?.chartPreviousClose;
+        if(validCloses.length >= 2){
+          lastClose = validCloses[validCloses.length - 1];
+          prevClose = validCloses[validCloses.length - 2];
+        }
+
+        log(`    ✅ ${sym.key}: ${lastClose?.toFixed(2)} (전일 ${prevClose?.toFixed(2)})`, "var(--g)");
+        proxyWorks = true;
+
+        if(sym.key === "VIX") {
+          proxyResult.vix = lastClose;
+          proxyResult.vixPrev = prevClose;
+        }
+        if(sym.key === "SOX") {
+          if(typeof lastClose === "number" && typeof prevClose === "number"){
+            proxyResult.sox = ((lastClose - prevClose) / prevClose) * 100;
+          }
+        }
+        if(sym.key === "KOSPI") {
+          proxyResult.kospi = lastClose;
+          proxyResult.kospiPrev = prevClose;
+          if(typeof meta?.fiftyTwoWeekHigh === "number") proxyResult.kospi52w = meta.fiftyTwoWeekHigh;
+        }
       } catch(e) {
-        log(`    ❌ JSON 파싱 실패: ${e.message}`, "var(--r)");
-        log(`    응답 일부: ${text.substring(0, 100)}`, "var(--tx3)");
-        continue;
+        log(`    ${sym.key}: ${e.message}`, "var(--r)");
       }
+    }
 
-      const quotes = json.quoteResponse?.result;
-      if(!quotes || quotes.length === 0){
-        log(`    ❌ quoteResponse.result 없음`, "var(--r)");
-        log(`    응답 구조: ${JSON.stringify(json).substring(0,200)}`, "var(--tx3)");
-        continue;
-      }
-
-      log(`    ✅ ${quotes.length}개 종목 데이터 수신`, "var(--g)");
-
-      for(const q of quotes){
-        log(`      • ${q.symbol}: ${q.regularMarketPrice} (${q.regularMarketChangePercent?.toFixed(2)}%)`, "var(--tx)");
-      }
-
-      // 실제 적용
-      const result = { success: true, source: "Yahoo (" + proxy.name + ")" };
-      for(const q of quotes){
-        if(q.symbol === "^VIX" && typeof q.regularMarketPrice === "number"){
-          result.vix = q.regularMarketPrice;
-          result.vixPrev = q.regularMarketPreviousClose;
-        }
-        if(q.symbol === "^SOX" && typeof q.regularMarketChangePercent === "number"){
-          result.sox = q.regularMarketChangePercent;
-        }
-        if(q.symbol === "^KS11" && typeof q.regularMarketPrice === "number"){
-          result.kospi = q.regularMarketPrice;
-          result.kospiPrev = q.regularMarketPreviousClose;
-          if(typeof q.fiftyTwoWeekHigh === "number") result.kospi52w = q.fiftyTwoWeekHigh;
-        }
-      }
-
-      applyMarketData(result);
+    if(proxyWorks){
+      applyMarketData(proxyResult);
       log(`  ✅ ${proxy.name} 성공 — 데이터 적용 완료`, "var(--g)");
       yahooSuccess = true;
       break;
+    } else {
+      log(`  ❌ ${proxy.name} 모두 실패`, "var(--r)");
+    }
+  }
 
-    } catch(e) {
-      log(`    ❌ 예외 발생: ${e.message}`, "var(--r)");
-      // 가능한 원인 표시
-      if(e.message.includes("Failed to fetch")){
-        log(`    원인: CORS 차단 또는 네트워크 차단`, "var(--y)");
+  // Claude AI 시도 (Yahoo 성공해도 VKOSPI는 Claude에서)
+  log("\n📡 2단계: Claude AI 시도 (VKOSPI 필수)", "var(--acc2)");
+  const claudeKey = (localStorage.getItem("wo_apikey")||"").trim();
+  if(!claudeKey){
+    log("  ⚠️ Claude API 키 미등록", "var(--y)");
+  } else {
+    try {
+      const claudeResult = await tryClaudeAPI(claudeKey);
+      if(claudeResult && claudeResult.success){
+        const merged = {success:true, source:"Claude AI"};
+        if(claudeResult.vkospi) merged.vkospi = claudeResult.vkospi;
+        // Yahoo가 못 가져온 것만 Claude로 채움
+        if(!S.vix?.source?.includes("Yahoo") && claudeResult.vix) merged.vix = claudeResult.vix;
+        if(!S.sox?.source?.includes("Yahoo") && claudeResult.sox !== undefined) merged.sox = claudeResult.sox;
+        if(!S.kospi?.source?.includes("Yahoo") && claudeResult.kospi){
+          merged.kospi = claudeResult.kospi;
+          if(claudeResult.kospi52w) merged.kospi52w = claudeResult.kospi52w;
+        }
+        applyMarketData(merged);
+        log(`  ✅ Claude AI 적용: ${Object.keys(merged).filter(k=>k!=='success'&&k!=='source').join(', ')}`, "var(--g)");
+      } else {
+        log("  ❌ Claude AI 응답 없음", "var(--r)");
       }
-      continue;
+    } catch(e) {
+      log(`  ❌ Claude API 예외: ${e.message}`, "var(--r)");
     }
   }
 
   if(!yahooSuccess){
-    log("\n📡 2단계: Alpha Vantage 시도", "var(--acc2)");
+    log("\n📡 3단계: Alpha Vantage 시도", "var(--acc2)");
     const alphaKey = (localStorage.getItem("wo_alphavantage_key")||"").trim();
 
     if(!alphaKey){
@@ -560,75 +605,98 @@ window.forceRefreshIndices = async function(){
   log(`  SOX: ${S.sox?.value}% (${S.sox?.source || '소스 없음'})`, "var(--tx)");
   log(`  KOSPI: ${S.kospi?.value} (${S.kospi?.source || '소스 없음'})`, "var(--tx)");
 
-  if(!yahooSuccess){
-    log("\n💡 권장 사항", "var(--y)");
-    log("  CORS 프록시가 모두 차단되어 자동 갱신 불가합니다.", "var(--tx2)");
-    log("  '✏️ KOSPI 수동 입력' 버튼 사용 권장.", "var(--tx2)");
-  } else {
+  const hasYahoo = !!S.kospi?.source?.includes("Yahoo");
+  const hasClaude = !!S.vkospi?.source?.includes("Claude");
+
+  if(hasYahoo || hasClaude){
+    log("\n✅ 갱신 완료 — 일부 또는 전체 데이터 적용됨", "var(--g)");
     renderPage();
+  } else {
+    log("\n💡 권장 사항", "var(--y)");
+    log("  모든 자동 갱신 실패. 수동 입력 권장.", "var(--tx2)");
   }
 };
 
 async function tryYahooFinance(){
-  const symbols = "%5EVIX,%5ESOX,%5EKS11";  // ^VIX, ^SOX, ^KS11
-  const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`;
-
-  // 여러 프록시 시도
-  const proxies = [
-    "https://api.allorigins.win/raw?url=",
-    "https://corsproxy.io/?",
-    "https://cors-anywhere.herokuapp.com/"
+  // ⚠️ Yahoo v7 quote API는 2025년 무료 사용자에 차단됨
+  // 대안: v8 chart API (아직 무료, 5일치 종가 데이터 포함)
+  const symbols = [
+    {key:"vix", code:"%5EVIX"},
+    {key:"sox", code:"%5ESOX"},
+    {key:"kospi", code:"%5EKS11"}
   ];
 
+  const proxies = [
+    {name:"allorigins.win", build: u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u)},
+    {name:"corsproxy.io", build: u => "https://corsproxy.io/?" + encodeURIComponent(u)},
+  ];
+
+  // 첫 번째로 성공하는 프록시 찾기
+  let workingProxy = null;
   for(const proxy of proxies){
     try{
-      const url = proxy === "https://cors-anywhere.herokuapp.com/"
-        ? proxy + yahooUrl
-        : proxy + encodeURIComponent(yahooUrl);
+      const testUrl = proxy.build(`https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range=5d&interval=1d`);
+      const resp = await fetch(testUrl, {method:"GET", headers:{"Accept":"application/json"}});
+      if(!resp.ok) continue;
+      const text = await resp.text();
+      if(text.length < 100) continue;  // 너무 짧으면 실패
+      const json = JSON.parse(text);
+      if(json.chart && json.chart.result && json.chart.result[0]){
+        workingProxy = proxy;
+        break;
+      }
+    } catch(e) { continue; }
+  }
 
-      const resp = await fetch(url, {
-        method:"GET",
-        headers: {"Accept":"application/json"}
-      });
+  if(!workingProxy) return null;
+
+  const result = { success: true, source: "Yahoo Chart (" + workingProxy.name + ")" };
+
+  for(const sym of symbols){
+    try{
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym.code}?range=5d&interval=1d`;
+      const resp = await fetch(workingProxy.build(yahooUrl));
       if(!resp.ok) continue;
 
       const json = await resp.json();
-      const quotes = json.quoteResponse?.result;
-      if(!quotes || !Array.isArray(quotes) || quotes.length === 0) continue;
+      const data = json.chart?.result?.[0];
+      if(!data) continue;
 
-      const result = { success: true, source: "Yahoo Finance (" + proxy.replace(/https:\/\//,"").split("/")[0] + ")" };
-
-      for(const q of quotes){
-        const sym = q.symbol;
-        const price = q.regularMarketPrice;
-        const prev = q.regularMarketPreviousClose;
-        const pctChange = q.regularMarketChangePercent;
-        const high52w = q.fiftyTwoWeekHigh;
-
-        if(sym === "^VIX" && typeof price === "number"){
-          result.vix = price;
-          result.vixPrev = prev;
-        }
-        if(sym === "^SOX" && typeof pctChange === "number"){
-          result.sox = pctChange;  // SOX는 일일 변동률
-          result.soxPrice = price;
-        }
-        if(sym === "^KS11" && typeof price === "number"){
-          result.kospi = price;
-          result.kospiPrev = prev;
-          if(typeof high52w === "number" && high52w > 0){
-            result.kospi52w = high52w;
-          }
-        }
+      const meta = data.meta;
+      const closes = data.indicators?.quote?.[0]?.close || [];
+      // 마지막 거래일 종가
+      let lastClose = meta?.regularMarketPrice;
+      let prevClose = meta?.chartPreviousClose;
+      // 차트 데이터에서 더 정확한 값
+      const validCloses = closes.filter(v => v !== null && v !== undefined);
+      if(validCloses.length >= 2){
+        lastClose = validCloses[validCloses.length - 1];
+        prevClose = validCloses[validCloses.length - 2];
+      } else if(validCloses.length === 1){
+        lastClose = validCloses[0];
       }
-      console.log("✅ Yahoo Finance 성공:", result);
-      return result;
-    } catch(e) {
-      console.warn(`프록시 ${proxy} 실패:`, e.message);
-      continue;
-    }
+
+      const high52w = meta?.fiftyTwoWeekHigh;
+
+      if(sym.key === "vix" && typeof lastClose === "number"){
+        result.vix = lastClose;
+        result.vixPrev = prevClose;
+      }
+      if(sym.key === "sox" && typeof lastClose === "number" && typeof prevClose === "number"){
+        // SOX는 일일 변동률로 환산
+        result.sox = ((lastClose - prevClose) / prevClose) * 100;
+        result.soxPrice = lastClose;
+      }
+      if(sym.key === "kospi" && typeof lastClose === "number"){
+        result.kospi = lastClose;
+        result.kospiPrev = prevClose;
+        if(typeof high52w === "number" && high52w > lastClose) result.kospi52w = high52w;
+      }
+    } catch(e) { continue; }
   }
-  return null;
+
+  console.log("✅ Yahoo Chart 결과:", result);
+  return (result.vix || result.sox || result.kospi) ? result : null;
 }
 
 // Alpha Vantage 호출 (사용자 키 필요)
@@ -666,26 +734,43 @@ async function tryClaudeAPI(apiKey){
       },
       body: JSON.stringify({
         model:"claude-sonnet-4-20250514",
-        max_tokens:200,
-        messages:[{role:"user", content:`${today} 기준 최근 거래일 데이터:
-- 코스피는 2026년 5월 현재 7,500~8,000선
-- VKOSPI 한국거래소 변동성지수
+        max_tokens:300,
+        messages:[{role:"user", content:`${today} 기준 최근 거래일 종가 데이터:
 
-JSON만 출력:
-{"vkospi": 숫자}`}]
+⚠️ 중요한 사실:
+- 코스피는 2026년 5월 현재 7,500~8,000선입니다 (2024년 박스피 시절 2,000대 아님)
+- 52주 최고가도 7,500 이상
+
+다음을 알려주세요:
+1. VIX (S&P500 변동성지수 종가, 일반적 10~50)
+2. VKOSPI (한국거래소 변동성지수 종가, 일반적 12~40)
+3. SOX (필라델피아 반도체지수 일일 변동률 %, -10 ~ +10)
+4. KOSPI (코스피 종가, 5000 이상)
+5. KOSPI52w (52주 최고가, 7000 이상)
+
+JSON만 출력 (설명 없이):
+{"vix":숫자,"vkospi":숫자,"sox":숫자,"kospi":숫자,"kospi52w":숫자}`}]
       })
     });
     const d = await resp.json();
-    if(d.error) return null;
+    if(d.error){
+      console.warn("Claude API error:", d.error);
+      return null;
+    }
     const txt = d.content?.find(c=>c.type==="text")?.text || "";
     const m = txt.match(/\{[\s\S]*?\}/);
     if(!m) return null;
     const data = JSON.parse(m[0]);
 
-    if(typeof data.vkospi === "number" && data.vkospi > 5 && data.vkospi < 80){
-      return { success: true, source: "Claude AI", vkospi: data.vkospi };
-    }
-    return null;
+    const result = { success: true, source: "Claude AI" };
+
+    if(typeof data.vix === "number" && data.vix > 5 && data.vix < 100) result.vix = data.vix;
+    if(typeof data.vkospi === "number" && data.vkospi > 5 && data.vkospi < 80) result.vkospi = data.vkospi;
+    if(typeof data.sox === "number" && Math.abs(data.sox) < 20) result.sox = data.sox;
+    if(typeof data.kospi === "number" && data.kospi > 5000 && data.kospi < 30000) result.kospi = data.kospi;
+    if(typeof data.kospi52w === "number" && data.kospi52w > 5000) result.kospi52w = data.kospi52w;
+
+    return (result.vix || result.vkospi || result.sox || result.kospi) ? result : null;
   } catch(e) {
     console.warn("Claude API 실패:", e.message);
     return null;
@@ -732,12 +817,11 @@ function applyMarketData(data){
     };
   }
 
-  if(typeof data.kospi === "number" && data.kospi > 1000 && data.kospi < 30000){
+  if(typeof data.kospi === "number" && data.kospi > 5000 && data.kospi < 30000){
     const oldKospi = S.kospi?.value || data.kospi;
     const dailyChange = oldKospi > 0 ? Math.abs((data.kospi - oldKospi) / oldKospi) : 0;
-    const isStatic = oldKospi > 0 && dailyChange < 0.0005 && data.source.includes("Claude");
-
-    if(!isStatic && dailyChange < 0.15){
+    // 검증 완화: 변동률 15% 미만이면 모두 통과 (Claude AI 거부 제거)
+    if(dailyChange < 0.15){
       let high = data.kospi52w;
       if(typeof high !== "number" || high < data.kospi){
         high = Math.max(S.kospi?.high52w || data.kospi, data.kospi);

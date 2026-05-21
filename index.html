@@ -783,11 +783,13 @@ function applyMarketData(data){
 
   if(typeof data.vix === "number" && data.vix > 5 && data.vix < 100){
     const oldVix = S.vix?.value || data.vix;
+    const vixRounded = Math.round(data.vix * 10) / 10;  // 소수점 1자리
+    const vixPrevRounded = data.vixPrev ? Math.round(data.vixPrev * 10) / 10 : oldVix;
     S.vix = {
       ...S.vix,
-      prev: data.vixPrev || oldVix,
-      value: data.vix,
-      hist: [...(S.vix.hist || []).slice(1), data.vix],
+      prev: vixPrevRounded,
+      value: vixRounded,
+      hist: [...(S.vix.hist || []).slice(1), vixRounded],
       at: ts(),
       source: data.source
     };
@@ -795,11 +797,12 @@ function applyMarketData(data){
 
   if(typeof data.vkospi === "number" && data.vkospi > 5 && data.vkospi < 80){
     const oldVk = S.vkospi?.value || data.vkospi;
+    const vkRounded = Math.round(data.vkospi * 10) / 10;
     S.vkospi = {
-      ...(S.vkospi || {hist:Array(10).fill(data.vkospi)}),
+      ...(S.vkospi || {hist:Array(10).fill(vkRounded)}),
       prev: oldVk,
-      value: data.vkospi,
-      hist: [...(S.vkospi?.hist || Array(9).fill(data.vkospi)).slice(1), data.vkospi],
+      value: vkRounded,
+      hist: [...(S.vkospi?.hist || Array(9).fill(vkRounded)).slice(1), vkRounded],
       at: ts(),
       source: data.source
     };
@@ -807,20 +810,35 @@ function applyMarketData(data){
 
   if(typeof data.sox === "number" && Math.abs(data.sox) < 20){
     const oldSox = S.sox?.value !== undefined ? S.sox.value : data.sox;
+    const soxRounded = Math.round(data.sox * 100) / 100;  // 소수점 2자리
     S.sox = {
-      ...(S.sox || {hist:Array(10).fill(data.sox)}),
+      ...(S.sox || {hist:Array(10).fill(soxRounded)}),
       prev: oldSox,
-      value: data.sox,
-      hist: [...(S.sox?.hist || Array(9).fill(data.sox)).slice(1), data.sox],
+      value: soxRounded,
+      hist: [...(S.sox?.hist || Array(9).fill(soxRounded)).slice(1), soxRounded],
       at: ts(),
       source: data.source
     };
   }
 
   if(typeof data.kospi === "number" && data.kospi > 5000 && data.kospi < 30000){
+    // 수동 입력 보호: 24시간 이내 수동 입력은 자동 덮어쓰기 안 함
+    if(S.kospi?.manualLock && S.kospi?.manualAt){
+      const manualAge = Date.now() - new Date(S.kospi.manualAt).getTime();
+      const hours24 = 24 * 60 * 60 * 1000;
+      if(manualAge < hours24){
+        console.log("KOSPI 수동 입력 보호 중 — 자동 갱신 스킵");
+        // 시각만 갱신
+        S.kospi.at = ts();
+        save();
+        return;
+      } else {
+        // 24시간 지나면 보호 해제
+        delete S.kospi.manualLock;
+      }
+    }
     const oldKospi = S.kospi?.value || data.kospi;
     const dailyChange = oldKospi > 0 ? Math.abs((data.kospi - oldKospi) / oldKospi) : 0;
-    // 검증 완화: 변동률 15% 미만이면 모두 통과 (Claude AI 거부 제거)
     if(dailyChange < 0.15){
       let high = data.kospi52w;
       if(typeof high !== "number" || high < data.kospi){
@@ -1017,11 +1035,11 @@ function pageHome(){
     <div class="stamp" style="margin-top:6px;">📅 ${DF(S.at)} 기준</div>
     <div style="margin-top:12px;display:flex;align-items:center;gap:10px;">
       <div style="background:${z.col}22;border:1px solid ${z.col}44;border-radius:20px;padding:3px 12px;display:inline-flex;align-items:center;gap:6px;">
-        <span style="font-size:11px;font-weight:700;color:${z.col};">VIX ${S.vix.value}</span>
+        <span style="font-size:11px;font-weight:700;color:${z.col};">VIX ${(+S.vix.value).toFixed(1)}</span>
         <span style="font-size:10px;color:${z.col};">${z.name}</span>
       </div>
       <div style="background:${zk.col}22;border:1px solid ${zk.col}44;border-radius:20px;padding:3px 12px;display:inline-flex;align-items:center;gap:6px;">
-        <span style="font-size:11px;font-weight:700;color:${zk.col};">VKOSPI ${S.vkospi?.value || 22}</span>
+        <span style="font-size:11px;font-weight:700;color:${zk.col};">VKOSPI ${(+(S.vkospi?.value || 22)).toFixed(1)}</span>
         <span style="font-size:10px;color:${zk.col};">${zk.name}</span>
       </div>
     </div>
@@ -1054,7 +1072,7 @@ function pageHome(){
   <div class="alert-item" style="border-left-color:${z.col};">
     <span style="font-size:18px;">😱</span>
     <div>
-      <div style="font-size:12.5px;color:var(--tx2);">VIX ${S.vix.value} <b style="color:${z.col};">${z.name}</b> · VKOSPI ${S.vkospi?.value || 22} <b style="color:${zk.col};">${zk.name}</b></div>
+      <div style="font-size:12.5px;color:var(--tx2);">VIX ${(+S.vix.value).toFixed(1)} <b style="color:${z.col};">${z.name}</b> · VKOSPI ${(+(S.vkospi?.value || 22)).toFixed(1)} <b style="color:${zk.col};">${zk.name}</b></div>
       <div style="font-size:11px;color:var(--tx3);margin-top:2px;">${getCombinedSignal(S.vix.value, S.vkospi?.value || 22)}</div>
       <div class="stamp" style="margin-top:3px;">분석 ${DT(S.vix.at)}</div>
     </div>
@@ -1107,14 +1125,20 @@ function pageVix(){
   <!-- VIX × VKOSPI 듀얼 카드 -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
     <div class="card" style="text-align:center;border-top:3px solid ${zVix.col};padding:14px 10px;">
-      <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;margin-bottom:6px;">🇺🇸 VIX (미국)</div>
-      <div style="font-size:32px;font-weight:900;font-family:var(--mono);color:${zVix.col};line-height:1;">${v}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;">🇺🇸 VIX (미국)</div>
+        ${S.vix?.source ? `<span style="font-size:9px;color:var(--tx3);">📡 ${S.vix.source}</span>` : ''}
+      </div>
+      <div style="font-size:32px;font-weight:900;font-family:var(--mono);color:${zVix.col};line-height:1;">${(+v).toFixed(1)}</div>
       <div style="background:${zVix.col}22;color:${zVix.col};font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:4px;margin-top:6px;display:inline-block;">${zVix.name}</div>
       <div style="font-size:10px;color:var(--tx2);margin-top:6px;">전일 <span style="color:${v>S.vix.prev?'var(--r)':'var(--g)'};font-family:var(--mono);font-weight:700;">${(v-S.vix.prev).toFixed(1)>0?"+":""}${(v-S.vix.prev).toFixed(1)}</span></div>
     </div>
     <div class="card" style="text-align:center;border-top:3px solid ${zVkospi.col};padding:14px 10px;">
-      <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;margin-bottom:6px;">🇰🇷 VKOSPI (한국)</div>
-      <div style="font-size:32px;font-weight:900;font-family:var(--mono);color:${zVkospi.col};line-height:1;">${vk}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;">🇰🇷 VKOSPI (한국)</div>
+        ${S.vkospi?.source ? `<span style="font-size:9px;color:var(--tx3);">📡 ${S.vkospi.source}</span>` : `<span style="font-size:9px;color:var(--y);">⚠️ Claude AI 키 필요</span>`}
+      </div>
+      <div style="font-size:32px;font-weight:900;font-family:var(--mono);color:${zVkospi.col};line-height:1;">${(+vk).toFixed(1)}</div>
       <div style="background:${zVkospi.col}22;color:${zVkospi.col};font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:4px;margin-top:6px;display:inline-block;">${zVkospi.name}</div>
       <div style="font-size:10px;color:var(--tx2);margin-top:6px;">전일 <span style="color:${vk>(S.vkospi?.prev||vk)?'var(--r)':'var(--g)'};font-family:var(--mono);font-weight:700;">${(vk-(S.vkospi?.prev||vk)).toFixed(1)>0?"+":""}${(vk-(S.vkospi?.prev||vk)).toFixed(1)}</span></div>
     </div>
@@ -1359,27 +1383,39 @@ window.quickUpdateKospi = function(){
   openDrawer(`
     <div class="dtitle">🇰🇷 KOSPI 빠른 입력</div>
     <div style="font-size:11px;color:var(--tx2);margin-bottom:14px;line-height:1.6;padding:8px 10px;background:rgba(251,191,36,.1);border-radius:6px;">
-      💡 AI는 최신 시장 데이터 접근이 제한적입니다.<br>
-      네이버 금융·다음 증권에서 <b style="color:var(--y);">코스피 종가</b>를 확인해 직접 입력하세요.
+      💡 Yahoo Finance가 가끔 옛날 값/지연 값을 반환합니다.<br>
+      네이버 금융·다음 증권에서 <b style="color:var(--y);">정확한 종가</b>를 확인해 입력하세요.<br>
+      ✅ <b style="color:var(--g);">수동 입력 시 자동 갱신이 덮어쓰지 않습니다</b>
     </div>
     <div class="fg">
-      <label class="fl">🇰🇷 KOSPI 종가 (오늘 또는 최근 거래일)</label>
+      <label class="fl">🇰🇷 KOSPI 오늘 종가</label>
       <input class="fi" type="number" step="0.01" id="qk-kospi" placeholder="예: 7940" value="${S.kospi?.value || ''}"/>
-      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">실시간 검색: "코스피 종가" 또는 KRX 앱</div>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">네이버에서 "코스피" 검색</div>
+    </div>
+    <div class="fg">
+      <label class="fl">📊 KOSPI 전일 종가 (변동률 계산용, 선택)</label>
+      <input class="fi" type="number" step="0.01" id="qk-prev" placeholder="예: 7271" value="${S.kospi?.prev || ''}"/>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px;">비워두면 자동 계산</div>
     </div>
     <div class="fg">
       <label class="fl">📊 KOSPI 52주 최고가 (선택)</label>
-      <input class="fi" type="number" step="0.01" id="qk-high" placeholder="예: 8000" value="${S.kospi?.high52w || ''}"/>
+      <input class="fi" type="number" step="0.01" id="qk-high" placeholder="예: 8046" value="${S.kospi?.high52w || ''}"/>
       <div style="font-size:10px;color:var(--tx2);margin-top:4px;">기존 값(${S.kospi?.high52w || 0})보다 높은 값만 갱신됨</div>
     </div>
     <div style="display:flex;gap:8px;">
-      <button class="btn btn-p btn-w" style="flex:1;" onclick="applyQuickKospi()">💾 KOSPI 저장</button>
+      <button class="btn btn-p btn-w" style="flex:1;" onclick="applyQuickKospi()">💾 저장 + 자동 갱신 차단</button>
     </div>
+    ${S.kospi?.manualLock ? `
+      <button class="btn btn-rd btn-w" style="margin-top:8px;" onclick="unlockKospiManual()">
+        🔓 자동 갱신 다시 허용
+      </button>
+    ` : ''}
   `);
 };
 
 window.applyQuickKospi = function(){
   const kospi = parseFloat(document.getElementById("qk-kospi").value);
+  const kospiPrev = parseFloat(document.getElementById("qk-prev")?.value);
   const kospiHigh = parseFloat(document.getElementById("qk-high")?.value);
 
   if(isNaN(kospi) || kospi < 1000){
@@ -1399,17 +1435,38 @@ window.applyQuickKospi = function(){
     high = Math.max(high, kospi);
   }
 
+  // 전일 종가 직접 입력 우선, 없으면 자동 처리
+  let prevVal;
+  if(!isNaN(kospiPrev) && kospiPrev > 1000){
+    prevVal = kospiPrev;
+  } else if(sameDay){
+    prevVal = S.kospi?.prev || kospi;
+  } else {
+    prevVal = S.kospi?.value || kospi;
+  }
+
   S.kospi = {
-    ...(S.kospi || {prev:kospi, hist:[kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi]}),
-    prev: sameDay ? (S.kospi?.prev || kospi) : (S.kospi?.value || kospi),
+    ...(S.kospi || {hist:Array(10).fill(kospi)}),
+    prev: prevVal,
     value: kospi,
     high52w: high,
     hist: sameDay
-      ? (S.kospi?.hist || [kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi])
-      : [...(S.kospi?.hist || [kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi,kospi]).slice(1), kospi],
-    at: ts()
+      ? (S.kospi?.hist || Array(10).fill(kospi))
+      : [...(S.kospi?.hist || Array(9).fill(kospi)).slice(1), kospi],
+    at: ts(),
+    source: "수동 입력",
+    manualLock: true,  // 수동 입력 보호 마커
+    manualAt: ts()
   };
   S.at = ts(); save(); closeDrawer(); renderPage();
+};
+
+window.unlockKospiManual = function(){
+  if(!S.kospi) return;
+  if(!confirm("자동 갱신을 다시 허용할까요?")) return;
+  delete S.kospi.manualLock;
+  delete S.kospi.manualAt;
+  save(); renderPage();
 };
 
 window.openVixForm = function(){
@@ -1420,12 +1477,12 @@ window.openVixForm = function(){
     </div>
     <div class="fg">
       <label class="fl">🇺🇸 VIX (미국 변동성)</label>
-      <input class="fi" type="number" step="0.1" id="d-vix-val" placeholder="예: 28.4" value="${S.vix.value}"/>
+      <input class="fi" type="number" step="0.1" id="d-vix-val" placeholder="예: 28.4" value="${(+S.vix.value).toFixed(1)}"/>
       <div style="font-size:10px;color:var(--tx2);margin-top:4px;">CBOE 산출 · finance.yahoo.com에서 ^VIX 검색</div>
     </div>
     <div class="fg">
       <label class="fl">🇰🇷 VKOSPI (한국 변동성)</label>
-      <input class="fi" type="number" step="0.1" id="d-vk-val" placeholder="예: 22.1" value="${S.vkospi?.value || 22}"/>
+      <input class="fi" type="number" step="0.1" id="d-vk-val" placeholder="예: 22.1" value="${(+(S.vkospi?.value || 22)).toFixed(1)}"/>
       <div style="font-size:10px;color:var(--tx2);margin-top:4px;">한국거래소 산출 · KRX 또는 증권사 앱 조회</div>
     </div>
     <div class="fg">
@@ -1574,11 +1631,15 @@ function pageCorrection(){
   if(sox < -2) { alertScore += 2; alertReasons.push("SOX < -2% (강한 매도)"); }
   if(dailyPct < -2) { alertScore += 2; alertReasons.push(`KOSPI ${dailyPct.toFixed(1)}% (단일 큰 하락)`); }
   if(recentTrend < -5) { alertScore += 1; alertReasons.push(`최근 추세 ${recentTrend.toFixed(1)}%`); }
+  // KOSPI 52주 최고 대비 drawdown도 점수에 반영
+  if(drawdown <= -10) { alertScore += 1; alertReasons.push(`KOSPI 52주 최고 대비 ${drawdown.toFixed(1)}% (조정 진행 중)`); }
+  if(drawdown <= -15) { alertScore += 1; alertReasons.push(`KOSPI 52주 최고 대비 ${drawdown.toFixed(1)}% (중급 조정 이상)`); }
+  if(drawdown <= -20) { alertScore += 2; alertReasons.push(`KOSPI 52주 최고 대비 ${drawdown.toFixed(1)}% (약세장)`); }
 
   let alertLevel, alertColor;
   if(alertScore >= 6) { alertLevel = "긴급"; alertColor = "#dc2626"; }
   else if(alertScore >= 4) { alertLevel = "경고"; alertColor = "#fb923c"; }
-  else if(alertScore >= 2) { alertLevel = "주의"; alertColor = "#fbbf24"; }
+  else if(alertScore >= 1) { alertLevel = "주의"; alertColor = "#fbbf24"; }
   else { alertLevel = "정상"; alertColor = "#34d399"; }
 
   // 조정 시나리오
@@ -1613,8 +1674,8 @@ function pageCorrection(){
       <span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--acc2);">${DT(S.kospi?.at || ts())}</span>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;font-size:10px;">
-      <span style="color:var(--tx3);">
-        ${S.kospi?.source ? `📡 ${S.kospi.source}` : '⚠️ 데이터 소스 없음'}
+      <span style="color:${S.kospi?.manualLock ? 'var(--g)' : 'var(--tx3)'};">
+        ${S.kospi?.manualLock ? '🔒 수동 입력 (보호 중)' : (S.kospi?.source ? `📡 ${S.kospi.source}` : '⚠️ 데이터 소스 없음')}
       </span>
       <button onclick="forceRefreshIndices()" style="padding:4px 10px;background:transparent;border:1px solid var(--acc);color:var(--acc2);border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;">
         🔄 강제 갱신
@@ -1687,8 +1748,8 @@ function pageCorrection(){
       </div>
     `}
     <div style="font-size:10px;color:var(--tx2);line-height:1.7;background:var(--s2);padding:8px 10px;border-radius:6px;">
-      <b>점수 기준</b>: VIX > 25 (+2), > 30 (+1), VKOSPI > 25 (+2), SOX < -1% (+2), < -2% (+2), 일일 KOSPI -2% (+2), 7일 추세 -5% (+1)<br>
-      <b>레벨</b>: 정상 0~1점, 주의 2~3점, 경고 4~5점, 긴급 6점+
+      <b>점수 기준</b>: VIX > 25 (+2), > 30 (+1), VKOSPI > 25 (+2), SOX < -1% (+2), < -2% (+2), 일일 KOSPI -2% (+2), 7일 추세 -5% (+1), 52주 -10%↓ (+1), -15%↓ (+1), -20%↓ (+2)<br>
+      <b>레벨</b>: 정상 0점, 주의 1~3점, 경고 4~5점, 긴급 6점+
     </div>
   </div>
 

@@ -269,6 +269,11 @@ const DEFAULT = {
   vkospi:{value:22.1,prev:20.5,hist:[15,17,19,16,21,24,26,22,21,22],at:new Date().toISOString()},
   sox:{value:1.5,prev:0.8,hist:[-2.1,-0.8,1.2,0.5,2.1,1.5,-0.3,1.8,2.3,1.5],at:new Date().toISOString()},
   kospi:{value:7643,prev:7822,high52w:7999,hist:[6800,7000,7200,7400,7500,7600,7700,7800,7822,7643],at:new Date().toISOString()},
+  apiUsage:{
+    monthly:{},  // {"2026-05": {sonnet:{calls:0,inTokens:0,outTokens:0}, opus:{...}}}
+    daily:{},    // {"2026-05-22": {sonnet:0, opus:0}}
+    lastReset:new Date().toISOString()
+  },
   loans:[],
   pension:{
     total:342000000,
@@ -315,6 +320,10 @@ if(!S.sox){
 }
 if(!S.kospi){
   S.kospi = JSON.parse(JSON.stringify(DEFAULT.kospi));
+  save();
+}
+if(!S.apiUsage){
+  S.apiUsage = JSON.parse(JSON.stringify(DEFAULT.apiUsage));
   save();
 }
 // KOSPI 데이터 정합성 자동 보정
@@ -502,10 +511,14 @@ window.forceRefreshIndices = async function(){
         const meta = data.meta;
         const closes = data.indicators?.quote?.[0]?.close || [];
         const validCloses = closes.filter(v => v !== null);
+        // meta 값 우선 사용 (가장 정확)
         let lastClose = meta?.regularMarketPrice;
         let prevClose = meta?.chartPreviousClose;
-        if(validCloses.length >= 2){
+        // meta 값 없으면 차트 배열 사용
+        if(typeof lastClose !== "number" && validCloses.length >= 1){
           lastClose = validCloses[validCloses.length - 1];
+        }
+        if(typeof prevClose !== "number" && validCloses.length >= 2){
           prevClose = validCloses[validCloses.length - 2];
         }
 
@@ -517,8 +530,10 @@ window.forceRefreshIndices = async function(){
           proxyResult.vixPrev = prevClose;
         }
         if(sym.key === "SOX") {
-          if(typeof lastClose === "number" && typeof prevClose === "number"){
-            proxyResult.sox = ((lastClose - prevClose) / prevClose) * 100;
+          if(typeof lastClose === "number" && typeof prevClose === "number" && prevClose > 0){
+            const soxPct = ((lastClose - prevClose) / prevClose) * 100;
+            proxyResult.sox = soxPct;
+            log(`      SOX 변동률: ${soxPct.toFixed(2)}% (${lastClose.toFixed(2)} ÷ ${prevClose.toFixed(2)})`, "var(--tx2)");
           }
         }
         if(sym.key === "KOSPI") {
@@ -664,16 +679,19 @@ async function tryYahooFinance(){
 
       const meta = data.meta;
       const closes = data.indicators?.quote?.[0]?.close || [];
-      // 마지막 거래일 종가
+      const validCloses = closes.filter(v => v !== null && v !== undefined);
+
+      // 가장 정확한 현재가: meta.regularMarketPrice (실시간 또는 마지막 거래)
+      // 가장 정확한 전일 종가: meta.chartPreviousClose (정확한 직전 거래일 종가)
       let lastClose = meta?.regularMarketPrice;
       let prevClose = meta?.chartPreviousClose;
-      // 차트 데이터에서 더 정확한 값
-      const validCloses = closes.filter(v => v !== null && v !== undefined);
-      if(validCloses.length >= 2){
+
+      // meta 값이 없을 때만 차트 배열 사용
+      if(typeof lastClose !== "number" && validCloses.length >= 1){
         lastClose = validCloses[validCloses.length - 1];
+      }
+      if(typeof prevClose !== "number" && validCloses.length >= 2){
         prevClose = validCloses[validCloses.length - 2];
-      } else if(validCloses.length === 1){
-        lastClose = validCloses[0];
       }
 
       const high52w = meta?.fiftyTwoWeekHigh;
@@ -682,8 +700,8 @@ async function tryYahooFinance(){
         result.vix = lastClose;
         result.vixPrev = prevClose;
       }
-      if(sym.key === "sox" && typeof lastClose === "number" && typeof prevClose === "number"){
-        // SOX는 일일 변동률로 환산
+      if(sym.key === "sox" && typeof lastClose === "number" && typeof prevClose === "number" && prevClose > 0){
+        // meta의 정확한 현재가/전일 종가로 변동률 계산
         result.sox = ((lastClose - prevClose) / prevClose) * 100;
         result.soxPrice = lastClose;
       }
@@ -756,6 +774,10 @@ JSON만 출력 (설명 없이):
     if(d.error){
       console.warn("Claude API error:", d.error);
       return null;
+    }
+    // 사용량 추적
+    if(d.usage){
+      trackApiUsage("claude-sonnet-4-20250514", d.usage.input_tokens || 0, d.usage.output_tokens || 0);
     }
     const txt = d.content?.find(c=>c.type==="text")?.text || "";
     const m = txt.match(/\{[\s\S]*?\}/);
@@ -864,6 +886,67 @@ function applyMarketData(data){
   }
 
   save();
+}
+
+// API 사용량 기록
+function trackApiUsage(model, inputTokens, outputTokens){
+  if(!S.apiUsage) S.apiUsage = JSON.parse(JSON.stringify(DEFAULT.apiUsage));
+  const now = new Date();
+  const monthKey = now.toISOString().substring(0,7);  // "2026-05"
+  const dayKey = now.toISOString().substring(0,10);   // "2026-05-22"
+
+  // 모델 분류
+  let modelKey;
+  if(model.includes("opus")) modelKey = "opus";
+  else if(model.includes("sonnet")) modelKey = "sonnet";
+  else if(model.includes("haiku")) modelKey = "haiku";
+  else modelKey = "other";
+
+  // 월별 누적
+  if(!S.apiUsage.monthly[monthKey]) S.apiUsage.monthly[monthKey] = {};
+  if(!S.apiUsage.monthly[monthKey][modelKey]){
+    S.apiUsage.monthly[monthKey][modelKey] = {calls:0, inTokens:0, outTokens:0};
+  }
+  const m = S.apiUsage.monthly[monthKey][modelKey];
+  m.calls += 1;
+  m.inTokens += inputTokens;
+  m.outTokens += outputTokens;
+
+  // 일별 누적 (호출 횟수만)
+  if(!S.apiUsage.daily[dayKey]) S.apiUsage.daily[dayKey] = {};
+  S.apiUsage.daily[dayKey][modelKey] = (S.apiUsage.daily[dayKey][modelKey] || 0) + 1;
+
+  // 30일 이전 일별 데이터는 정리
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffKey = cutoff.toISOString().substring(0,10);
+  Object.keys(S.apiUsage.daily).forEach(k => {
+    if(k < cutoffKey) delete S.apiUsage.daily[k];
+  });
+
+  save();
+}
+
+// 비용 계산 (USD)
+function calcApiCost(model, inTokens, outTokens){
+  // Anthropic 가격표 (per million tokens, 2026.05 기준)
+  const prices = {
+    sonnet: {input: 3.00, output: 15.00},   // Sonnet 4
+    opus:   {input: 15.00, output: 75.00},  // Opus 4.7
+    haiku:  {input: 0.80, output: 4.00}
+  };
+  let key;
+  if(model.includes("opus")) key = "opus";
+  else if(model.includes("sonnet")) key = "sonnet";
+  else if(model.includes("haiku")) key = "haiku";
+  else return 0;
+  const p = prices[key];
+  return (inTokens / 1e6) * p.input + (outTokens / 1e6) * p.output;
+}
+
+// 비용을 원화로
+function costToKRW(usd){
+  return Math.round(usd * 1450);  // 환율 1450원 가정
 }
 
 function getSoxSignal(sox){
@@ -1161,7 +1244,10 @@ function pageVix(){
   <div class="card" style="margin-bottom:14px;border-top:3px solid ${soxSignal.color};">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <div>
-        <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;margin-bottom:4px;">🇺🇸 SOX (필라델피아 반도체 지수)</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;">🇺🇸 SOX (필라델피아 반도체 지수)</div>
+          ${S.sox?.source ? `<span style="font-size:9px;color:var(--tx3);">📡 ${S.sox.source}</span>` : ''}
+        </div>
         <div style="font-size:10px;color:var(--tx3);">미국 반도체 30개 종목 일일 변동률</div>
       </div>
       <div style="text-align:right;">
@@ -1526,7 +1612,8 @@ window.applyVix = function(){
       prev: S.sox?.value || sox,
       value: sox,
       hist: [...(S.sox?.hist || [sox,sox,sox,sox,sox,sox,sox,sox,sox]).slice(1), sox],
-      at: ts()
+      at: ts(),
+      source: "수동 입력"
     };
   }
   const kospi = parseFloat(document.getElementById("d-kospi-val")?.value);
@@ -3345,6 +3432,10 @@ JSON 배열만 출력:
 
     if(step) step.textContent = "📊 결과 처리 중...";
     const d = await resp.json();
+      // 사용량 추적 (Opus 모델)
+      if(d.usage){
+        trackApiUsage("claude-opus-4-7", d.usage.input_tokens || 0, d.usage.output_tokens || 0);
+      }
 
     if(d.error){
       res.innerHTML = `
@@ -3885,6 +3976,123 @@ function pageSettings(){
   </div>
 
   <div class="card" style="margin-top:12px;">
+    <div class="card-title">📊 API 사용량 모니터링</div>
+    ${(() => {
+      const now = new Date();
+      const monthKey = now.toISOString().substring(0,7);
+      const monthData = S.apiUsage?.monthly?.[monthKey] || {};
+      const dayKey = now.toISOString().substring(0,10);
+      const dayData = S.apiUsage?.daily?.[dayKey] || {};
+
+      let totalCalls = 0, totalCostUsd = 0;
+      let sonnetCalls = (monthData.sonnet?.calls) || 0;
+      let opusCalls = (monthData.opus?.calls) || 0;
+      let sonnetCost = monthData.sonnet ? calcApiCost("sonnet", monthData.sonnet.inTokens, monthData.sonnet.outTokens) : 0;
+      let opusCost = monthData.opus ? calcApiCost("opus", monthData.opus.inTokens, monthData.opus.outTokens) : 0;
+      totalCalls = sonnetCalls + opusCalls;
+      totalCostUsd = sonnetCost + opusCost;
+      const totalKrw = costToKRW(totalCostUsd);
+
+      const todaySonnet = dayData.sonnet || 0;
+      const todayOpus = dayData.opus || 0;
+      const todayCalls = todaySonnet + todayOpus;
+
+      // 일별 차트 데이터 (최근 14일)
+      const last14Days = [];
+      for(let i = 13; i >= 0; i--){
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const k = d.toISOString().substring(0,10);
+        const dd = S.apiUsage?.daily?.[k] || {};
+        last14Days.push({
+          date: k.substring(5),  // "05-22"
+          calls: (dd.sonnet || 0) + (dd.opus || 0)
+        });
+      }
+      const maxCalls = Math.max(...last14Days.map(d => d.calls), 1);
+
+      return `
+        <!-- 이번 달 요약 -->
+        <div style="background:linear-gradient(135deg,#0d1828,#0f1d35);border-radius:8px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.5px;margin-bottom:8px;">📅 이번 달 (${monthKey})</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+            <div>
+              <div style="font-size:11px;color:var(--tx3);">총 호출</div>
+              <div style="font-size:24px;font-weight:900;font-family:var(--mono);color:var(--acc2);line-height:1;">${totalCalls}<span style="font-size:13px;color:var(--tx3);font-weight:400;">회</span></div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:11px;color:var(--tx3);">예상 비용</div>
+              <div style="font-size:24px;font-weight:900;font-family:var(--mono);color:var(--g);line-height:1;">${totalKrw.toLocaleString()}<span style="font-size:13px;color:var(--tx3);font-weight:400;">원</span></div>
+              <div style="font-size:10px;color:var(--tx3);margin-top:2px;">$${totalCostUsd.toFixed(3)}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 모델별 분석 -->
+        <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:10px;color:var(--tx2);font-weight:700;margin-bottom:8px;">🤖 모델별 사용</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="background:var(--s1);padding:10px;border-radius:6px;border-left:3px solid #7eb8ff;">
+              <div style="font-size:10px;color:var(--tx3);">Sonnet (지수 갱신)</div>
+              <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:#7eb8ff;">${sonnetCalls}회</div>
+              <div style="font-size:10px;color:var(--tx2);margin-top:2px;">${costToKRW(sonnetCost).toLocaleString()}원</div>
+            </div>
+            <div style="background:var(--s1);padding:10px;border-radius:6px;border-left:3px solid #fbbf24;">
+              <div style="font-size:10px;color:var(--tx3);">Opus (사진 분석)</div>
+              <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:#fbbf24;">${opusCalls}회</div>
+              <div style="font-size:10px;color:var(--tx2);margin-top:2px;">${costToKRW(opusCost).toLocaleString()}원</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 오늘 사용 -->
+        <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-size:10px;color:var(--tx3);">오늘 (${dayKey.substring(5)})</div>
+              <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:${todayCalls > 0 ? 'var(--g)' : 'var(--tx2)'};">${todayCalls}회 호출</div>
+            </div>
+            <div style="text-align:right;font-size:10px;color:var(--tx3);">
+              Sonnet ${todaySonnet}회<br>
+              Opus ${todayOpus}회
+            </div>
+          </div>
+        </div>
+
+        <!-- 14일 추이 막대 -->
+        <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:10px;color:var(--tx2);font-weight:700;margin-bottom:8px;">📈 최근 14일 호출 추이</div>
+          <div style="display:flex;align-items:flex-end;gap:2px;height:60px;">
+            ${last14Days.map(d => `
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
+                <div style="width:100%;background:${d.calls > 0 ? 'var(--acc)' : 'var(--s1)'};height:${(d.calls / maxCalls) * 50}px;border-radius:2px;min-height:2px;transition:height .3s;" title="${d.date}: ${d.calls}회"></div>
+              </div>
+            `).join('')}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);margin-top:4px;">
+            <span>${last14Days[0].date}</span>
+            <span>${last14Days[7].date}</span>
+            <span>${last14Days[13].date}</span>
+          </div>
+        </div>
+
+        <!-- 안내 -->
+        <div style="background:var(--s2);border-radius:6px;padding:10px;font-size:10px;color:var(--tx3);line-height:1.6;">
+          💡 <b>가격표 (2026.05 기준):</b><br>
+          • Sonnet 4: 입력 $3 / 출력 $15 per 1M tokens<br>
+          • Opus 4.7: 입력 $15 / 출력 $75 per 1M tokens<br>
+          • 환율: 1 USD = 1,450원 가정<br>
+          ⚠️ 실제 사용량은 <a href="https://console.anthropic.com" target="_blank" style="color:var(--acc2);">console.anthropic.com</a>에서 확인
+        </div>
+
+        <button class="btn btn-rd btn-w" style="margin-top:10px;" onclick="resetApiUsage()">
+          🔄 사용량 통계 초기화
+        </button>
+      `;
+    })()}
+  </div>
+
+  <div class="card" style="margin-top:12px;">
     <div class="card-title">📊 Alpha Vantage API 키 (실시간 시장 데이터)</div>
     <div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.6;">
       VIX, SOX, KOSPI 실시간 데이터 자동 갱신용 (선택 사항)<br>
@@ -4052,6 +4260,13 @@ window.saveApiKey = function(){
   try{ localStorage.setItem("wo_apikey", v); }catch(e){}
   m.style.color="#34d399"; m.textContent="✅ API 키 저장 완료!";
   setTimeout(()=>{ m.textContent=""; }, 2000);
+};
+
+window.resetApiUsage = function(){
+  if(!confirm("API 사용량 통계를 모두 초기화할까요?\n(실제 청구는 Anthropic 콘솔에서 확인)")) return;
+  S.apiUsage = JSON.parse(JSON.stringify(DEFAULT.apiUsage));
+  save();
+  renderPage();
 };
 
 window.saveAlphaKey = function(){

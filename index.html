@@ -321,10 +321,18 @@ const DEFAULT = {
       {id:10, ticker:"132030", name:"KODEX 골드선물", scenario:"C/F", reason:"지정학·인플레 헤지", note:""}
     ]
   },
+  upcomingEvents:{
+    // 사전 이벤트 검토 시스템 - 정책/외교/거시 이벤트 사전 시나리오 분석
+    list:[]
+    // 각 이벤트: {
+    //   id, name, date(ISO), category(정책/외교/통화/지정학/기업/거시),
+    //   scenarios: { high:{result, marketImpact, action}, mid:{...}, low:{...} },
+    //   reviewed: false, review: { actualOutcome, predictedCorrectly, lessons }
+    // }
+  },
   hypothesisCheck:{
-    // 분기별 사용자 가설 점검 기록
     history:[],
-    nextDue:null,  // 다음 점검 예정일
+    nextDue:null,
     currentHypothesis:""
   },
   loans:[],
@@ -385,6 +393,10 @@ if(!S.scenarios){
 }
 if(!S.rebalanceTargets){
   S.rebalanceTargets = JSON.parse(JSON.stringify(DEFAULT.rebalanceTargets));
+  save();
+}
+if(!S.upcomingEvents){
+  S.upcomingEvents = JSON.parse(JSON.stringify(DEFAULT.upcomingEvents));
   save();
 }
 if(!S.hypothesisCheck){
@@ -2227,6 +2239,119 @@ function pageCorrection(){
     })()}
   </div>
 
+  <!-- ════════ 사전 이벤트 검토 ════════ -->
+  <div style="font-size:13px;font-weight:800;color:#a78bfa;margin:20px 0 8px;letter-spacing:.5px;">📅 사전 이벤트 검토</div>
+
+  <div class="card" style="margin-bottom:12px;">
+    <div style="font-size:11px;color:var(--tx2);line-height:1.6;margin-bottom:12px;padding:8px 10px;background:rgba(167,139,250,.08);border-radius:6px;">
+      💡 정책·외교·거시 이벤트 <b>이전</b>에 시나리오 3개(상/중/하)를 강제로 입력합니다.<br>
+      ⚠️ 호재만 등록하지 말고 <b>약세 트리거 이벤트도 균형 등록</b>하세요.
+    </div>
+    ${(()=>{
+      if(!S.upcomingEvents || !S.upcomingEvents.list) return '';
+      const events = S.upcomingEvents.list;
+      const now = new Date();
+
+      // 통계 계산
+      const reviewed = events.filter(e => e.reviewed);
+      const correctCount = reviewed.filter(e => e.review && e.review.predictedCorrectly === "정확" || e.review && e.review.predictedCorrectly === "부분 적중").length;
+      const accuracy = reviewed.length > 0 ? Math.round((correctCount / reviewed.length) * 100) : null;
+
+      // 다가오는 이벤트 (날짜순), 지난 이벤트 분리
+      const upcoming = events.filter(e => !e.reviewed && new Date(e.date) >= now).sort((a,b)=>new Date(a.date)-new Date(b.date));
+      const due = events.filter(e => !e.reviewed && new Date(e.date) < now);
+      const past = events.filter(e => e.reviewed).sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+      const catColor = {
+        "정책":"#4f80ff","외교":"#7eb8ff","통화":"#fbbf24",
+        "지정학":"#f87171","기업":"#34d399","거시":"#a78bfa"
+      };
+
+      let html = '';
+
+      // 통계 헤더
+      if(reviewed.length > 0){
+        html += `<div style="display:flex;gap:8px;margin-bottom:12px;">
+          <div style="flex:1;background:var(--s2);border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--tx3);">등록</div>
+            <div style="font-size:18px;font-weight:900;color:var(--tx);font-family:var(--mono);">${events.length}</div>
+          </div>
+          <div style="flex:1;background:var(--s2);border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--tx3);">점검 완료</div>
+            <div style="font-size:18px;font-weight:900;color:var(--tx);font-family:var(--mono);">${reviewed.length}</div>
+          </div>
+          <div style="flex:1;background:var(--s2);border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--tx3);">예측 적중률</div>
+            <div style="font-size:18px;font-weight:900;color:${accuracy >= 70 ? 'var(--g)' : accuracy >= 50 ? 'var(--y)' : 'var(--r)'};font-family:var(--mono);">${accuracy !== null ? accuracy + '%' : '-'}</div>
+          </div>
+        </div>`;
+      }
+
+      // 점검 대기 (날짜 지남)
+      if(due.length > 0){
+        html += '<div style="font-size:11px;color:var(--r);font-weight:700;margin:14px 0 6px;">🚨 사후 점검 대기 (' + due.length + ')</div>';
+        html += due.map(e => {
+          const dateStr = new Date(e.date).toLocaleDateString('ko');
+          const cc = catColor[e.category] || 'var(--tx2)';
+          return `<div style="background:rgba(248,113,113,.08);border-left:3px solid var(--r);border-radius:6px;padding:10px 12px;margin-bottom:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:700;color:var(--tx);">${esc(e.name)}</div>
+                <div style="font-size:10px;color:var(--tx3);margin-top:2px;">${dateStr} · <span style="color:${cc};">${esc(e.category||'')}</span></div>
+              </div>
+              <button onclick="reviewEvent(${e.id})" style="padding:6px 10px;background:var(--r);border:none;color:#fff;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;white-space:nowrap;">📝 점검</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      // 예정 이벤트
+      if(upcoming.length > 0){
+        html += '<div style="font-size:11px;color:var(--acc2);font-weight:700;margin:14px 0 6px;">📅 예정 이벤트 (' + upcoming.length + ')</div>';
+        html += upcoming.map(e => {
+          const ed = new Date(e.date);
+          const daysLeft = Math.ceil((ed - now) / (1000*60*60*24));
+          const dateStr = ed.toLocaleDateString('ko');
+          const cc = catColor[e.category] || 'var(--tx2)';
+          const close = daysLeft <= 7;
+          return `<div style="background:var(--s2);border-left:3px solid ${cc};border-radius:6px;padding:10px 12px;margin-bottom:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div style="flex:1;min-width:0;cursor:pointer;" onclick="viewEvent(${e.id})">
+                <div style="font-size:12px;font-weight:700;color:var(--tx);">${esc(e.name)}</div>
+                <div style="font-size:10px;color:var(--tx3);margin-top:2px;">${dateStr} · <span style="color:${cc};">${esc(e.category||'')}</span> · <span style="color:${close ? 'var(--y)' : 'var(--tx3)'};font-weight:${close?'700':'400'};">D-${daysLeft}</span></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px;">
+                <button onclick="viewEvent(${e.id})" style="padding:4px 8px;background:transparent;border:1px solid var(--b2);color:var(--tx2);border-radius:4px;font-size:10px;cursor:pointer;">👁️</button>
+                <button onclick="editEvent(${e.id})" style="padding:4px 8px;background:transparent;border:1px solid var(--b2);color:var(--tx2);border-radius:4px;font-size:10px;cursor:pointer;">✏️</button>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      // 점검 완료 이력 (최근 3건)
+      if(past.length > 0){
+        html += '<div style="font-size:11px;color:var(--g);font-weight:700;margin:14px 0 6px;">✅ 점검 완료 이력 (최근 3건)</div>';
+        html += past.slice(0,3).map(e => {
+          const dateStr = new Date(e.date).toLocaleDateString('ko');
+          const correct = e.review?.predictedCorrectly;
+          const correctColor = correct === "정확" ? "var(--g)" : correct === "부분 적중" ? "var(--y)" : "var(--r)";
+          return `<div style="background:var(--s2);border-left:3px solid ${correctColor};border-radius:6px;padding:10px 12px;margin-bottom:6px;">
+            <div style="font-size:11px;font-weight:700;color:var(--tx);">${esc(e.name)}</div>
+            <div style="font-size:10px;color:var(--tx3);margin-top:2px;">${dateStr} · <span style="color:${correctColor};font-weight:700;">${esc(correct || '-')}</span></div>
+            ${e.review?.lessons ? '<div style="font-size:10px;color:var(--tx2);margin-top:4px;line-height:1.4;">📚 ' + esc(e.review.lessons) + '</div>' : ''}
+          </div>`;
+        }).join('');
+      }
+
+      if(events.length === 0){
+        html += '<div style="text-align:center;color:var(--tx3);font-size:11px;padding:20px;">아직 등록된 이벤트가 없습니다.<br>예: MSCI 발표, 금통위, FOMC, 실적 발표 등</div>';
+      }
+
+      return html + '<button class="btn btn-p btn-w" style="margin-top:12px;" onclick="addEvent()">＋ 이벤트 등록 (시나리오 3개 필수)</button>';
+    })()}
+  </div>
+
   <!-- ════════ 가설 점검 ════════ -->
   <div style="font-size:13px;font-weight:800;color:var(--acc);margin:20px 0 8px;letter-spacing:.5px;">📋 분기별 가설 점검</div>
 
@@ -2258,7 +2383,32 @@ function pageCorrection(){
       const current = S.hypothesisCheck.currentHypothesis || "";
       const history = S.hypothesisCheck.history || [];
 
-      return statusBox + `
+      // 연동: 지난 90일 사전 이벤트 예측 적중률
+      let eventAccuracyBox = '';
+      if(S.upcomingEvents && S.upcomingEvents.list){
+        const cutoff = Date.now() - 90*24*60*60*1000;
+        const recent = S.upcomingEvents.list.filter(e => e.reviewed && e.review && new Date(e.review.reviewedAt).getTime() > cutoff);
+        if(recent.length > 0){
+          const exact = recent.filter(e => e.review.predictedCorrectly === "정확").length;
+          const partial = recent.filter(e => e.review.predictedCorrectly === "부분 적중").length;
+          const miss = recent.filter(e => e.review.predictedCorrectly === "빗나감").length;
+          const score = recent.length > 0 ? Math.round(((exact + partial * 0.5) / recent.length) * 100) : 0;
+          const color = score >= 70 ? 'var(--g)' : score >= 50 ? 'var(--y)' : 'var(--r)';
+
+          eventAccuracyBox = `<div style="background:var(--s2);border-left:3px solid ${color};border-radius:6px;padding:10px;margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:700;color:var(--tx);margin-bottom:6px;">🔗 지난 90일 사전 이벤트 예측 점수</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div style="font-size:24px;font-weight:900;font-family:var(--mono);color:${color};">${score}점</div>
+              <div style="font-size:10px;color:var(--tx2);line-height:1.5;flex:1;">
+                정확 ${exact} · 부분 ${partial} · 빗나감 ${miss} (총 ${recent.length}건)<br>
+                <span style="color:var(--tx3);">가설 점검 시 본인 예측 능력의 실증 근거</span>
+              </div>
+            </div>
+          </div>`;
+        }
+      }
+
+      return statusBox + eventAccuracyBox + `
         <div style="font-size:11px;color:var(--tx2);margin-bottom:6px;">📌 현재 가설</div>
         <div style="background:var(--s2);border-radius:6px;padding:10px;margin-bottom:10px;font-size:11px;color:var(--tx);line-height:1.6;min-height:40px;">
           ${current ? esc(current).replace(/\n/g,'<br>') : '<span style="color:var(--tx3);">아직 입력 안 됨</span>'}
@@ -4674,6 +4824,318 @@ window.saveHypothesisCheck = function(){
   next.setMonth(next.getMonth() + 3);
   S.hypothesisCheck.nextDue = next.toISOString();
 
+  save(); closeDrawer(); renderPage();
+};
+
+// ════════ 사전 이벤트 검토 함수 ════════
+
+window.addEvent = function(){
+  openDrawer(`
+    <div class="dtitle">📅 사전 이벤트 등록</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:12px;line-height:1.6;padding:8px 10px;background:rgba(167,139,250,.08);border-radius:6px;">
+      ⚠️ 시나리오 3개(상/중/하)와 행동 계획을 모두 입력해야 저장됩니다.<br>
+      이 마찰이 양면적 사고를 강제합니다.
+    </div>
+    <div class="fg">
+      <label class="fl">이벤트명</label>
+      <input class="fi" type="text" id="ev-name" placeholder="예: MSCI 시장분류 발표"/>
+    </div>
+    <div class="fg">
+      <label class="fl">예정일</label>
+      <input class="fi" type="date" id="ev-date"/>
+    </div>
+    <div class="fg">
+      <label class="fl">분류</label>
+      <select class="fi" id="ev-category">
+        <option value="정책">정책 (자본시장·세제·규제)</option>
+        <option value="외교">외교 (정상회담·통상)</option>
+        <option value="통화">통화 (금통위·FOMC·환율)</option>
+        <option value="지정학">지정학 (북한·미중·전쟁)</option>
+        <option value="기업">기업 (실적·M&A)</option>
+        <option value="거시">거시 (PMI·고용·GDP)</option>
+      </select>
+    </div>
+
+    <div style="background:rgba(52,211,153,.08);border-left:3px solid var(--g);padding:10px;border-radius:4px;margin:14px 0 10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--g);margin-bottom:6px;">🟢 상 시나리오 (호재 결과)</div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">예상 결과</label>
+        <input class="fi" type="text" id="ev-high-result" placeholder="예: 워치리스트 등재 성공"/>
+      </div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">시장 영향</label>
+        <input class="fi" type="text" id="ev-high-impact" placeholder="예: 코스피 +3~5%, 외국인 순매수 전환"/>
+      </div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">본인 행동 계획</label>
+        <input class="fi" type="text" id="ev-high-action" placeholder="예: 9,000 돌파 시 AI전력 30% 익절"/>
+      </div>
+    </div>
+
+    <div style="background:rgba(251,191,36,.08);border-left:3px solid var(--y);padding:10px;border-radius:4px;margin:10px 0;">
+      <div style="font-size:11px;font-weight:700;color:var(--y);margin-bottom:6px;">🟡 중 시나리오 (보합 결과)</div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">예상 결과</label>
+        <input class="fi" type="text" id="ev-mid-result" placeholder="예: 보류, 내년 재검토"/>
+      </div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">시장 영향</label>
+        <input class="fi" type="text" id="ev-mid-impact" placeholder="예: 코스피 -1~+1% 보합"/>
+      </div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">본인 행동 계획</label>
+        <input class="fi" type="text" id="ev-mid-action" placeholder="예: 현 포지션 유지, 관망"/>
+      </div>
+    </div>
+
+    <div style="background:rgba(248,113,113,.08);border-left:3px solid var(--r);padding:10px;border-radius:4px;margin:10px 0;">
+      <div style="font-size:11px;font-weight:700;color:var(--r);margin-bottom:6px;">🔴 하 시나리오 (악재 결과)</div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">예상 결과</label>
+        <input class="fi" type="text" id="ev-low-result" placeholder="예: 거부, 평가 후퇴"/>
+      </div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">시장 영향</label>
+        <input class="fi" type="text" id="ev-low-impact" placeholder="예: 코스피 -3~5%, 외국인 추가 매도"/>
+      </div>
+      <div class="fg">
+        <label class="fl" style="font-size:10px;">본인 행동 계획</label>
+        <input class="fi" type="text" id="ev-low-action" placeholder="예: 7,500 하향 돌파 시 반도체 5% 익절"/>
+      </div>
+    </div>
+
+    <button class="btn btn-p btn-w" style="margin-top:10px;" onclick="saveNewEvent()">💾 저장 (모든 필드 필수)</button>
+  `);
+};
+
+window.saveNewEvent = function(){
+  const name = document.getElementById("ev-name").value.trim();
+  const date = document.getElementById("ev-date").value;
+  const category = document.getElementById("ev-category").value;
+  const highR = document.getElementById("ev-high-result").value.trim();
+  const highI = document.getElementById("ev-high-impact").value.trim();
+  const highA = document.getElementById("ev-high-action").value.trim();
+  const midR = document.getElementById("ev-mid-result").value.trim();
+  const midI = document.getElementById("ev-mid-impact").value.trim();
+  const midA = document.getElementById("ev-mid-action").value.trim();
+  const lowR = document.getElementById("ev-low-result").value.trim();
+  const lowI = document.getElementById("ev-low-impact").value.trim();
+  const lowA = document.getElementById("ev-low-action").value.trim();
+
+  // 강제 검증 - 시나리오 3개 모두 입력 필수
+  if(!name){ alert("이벤트명을 입력하세요"); return; }
+  if(!date){ alert("예정일을 입력하세요"); return; }
+  if(!highR || !highI || !highA){ alert("상 시나리오 3필드 모두 입력하세요 (호재만 보지 마세요)"); return; }
+  if(!midR || !midI || !midA){ alert("중 시나리오 3필드 모두 입력하세요"); return; }
+  if(!lowR || !lowI || !lowA){ alert("하 시나리오 3필드 모두 입력하세요 (약세 시나리오 작성이 핵심)"); return; }
+
+  if(!S.upcomingEvents) S.upcomingEvents = {list:[]};
+  const maxId = S.upcomingEvents.list.reduce((m,e)=>Math.max(m, e.id||0), 0);
+
+  S.upcomingEvents.list.push({
+    id: maxId + 1,
+    name: name,
+    date: new Date(date).toISOString(),
+    category: category,
+    createdAt: ts(),
+    scenarios: {
+      high: { result: highR, marketImpact: highI, action: highA },
+      mid:  { result: midR,  marketImpact: midI,  action: midA },
+      low:  { result: lowR,  marketImpact: lowI,  action: lowA }
+    },
+    reviewed: false,
+    review: null
+  });
+  save(); closeDrawer(); renderPage();
+};
+
+window.viewEvent = function(id){
+  const e = S.upcomingEvents?.list?.find(x=>x.id===id);
+  if(!e) return;
+  const dateStr = new Date(e.date).toLocaleDateString('ko');
+  const now = new Date();
+  const daysLeft = Math.ceil((new Date(e.date) - now) / (1000*60*60*24));
+
+  openDrawer(`
+    <div class="dtitle">📅 ${esc(e.name)}</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:12px;">
+      ${dateStr} · ${esc(e.category)} · ${daysLeft >= 0 ? 'D-' + daysLeft : '(' + Math.abs(daysLeft) + '일 지남)'}
+    </div>
+
+    <div style="background:rgba(52,211,153,.08);border-left:3px solid var(--g);padding:10px;border-radius:4px;margin-bottom:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--g);margin-bottom:4px;">🟢 상 시나리오</div>
+      <div style="font-size:11px;color:var(--tx);line-height:1.6;">
+        <b>결과:</b> ${esc(e.scenarios.high.result)}<br>
+        <b>시장:</b> ${esc(e.scenarios.high.marketImpact)}<br>
+        <b>행동:</b> ${esc(e.scenarios.high.action)}
+      </div>
+    </div>
+
+    <div style="background:rgba(251,191,36,.08);border-left:3px solid var(--y);padding:10px;border-radius:4px;margin-bottom:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--y);margin-bottom:4px;">🟡 중 시나리오</div>
+      <div style="font-size:11px;color:var(--tx);line-height:1.6;">
+        <b>결과:</b> ${esc(e.scenarios.mid.result)}<br>
+        <b>시장:</b> ${esc(e.scenarios.mid.marketImpact)}<br>
+        <b>행동:</b> ${esc(e.scenarios.mid.action)}
+      </div>
+    </div>
+
+    <div style="background:rgba(248,113,113,.08);border-left:3px solid var(--r);padding:10px;border-radius:4px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:var(--r);margin-bottom:4px;">🔴 하 시나리오</div>
+      <div style="font-size:11px;color:var(--tx);line-height:1.6;">
+        <b>결과:</b> ${esc(e.scenarios.low.result)}<br>
+        <b>시장:</b> ${esc(e.scenarios.low.marketImpact)}<br>
+        <b>행동:</b> ${esc(e.scenarios.low.action)}
+      </div>
+    </div>
+
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-p" style="flex:1;" onclick="editEvent(${id})">✏️ 수정</button>
+      <button class="btn btn-g" style="flex:1;" onclick="reviewEvent(${id})">📝 사후 점검</button>
+      <button class="btn btn-rd" onclick="deleteEvent(${id})">🗑️</button>
+    </div>
+  `);
+};
+
+window.editEvent = function(id){
+  const e = S.upcomingEvents?.list?.find(x=>x.id===id);
+  if(!e) return;
+  const dStr = new Date(e.date).toISOString().substring(0,10);
+
+  openDrawer(`
+    <div class="dtitle">✏️ 이벤트 수정</div>
+    <div class="fg">
+      <label class="fl">이벤트명</label>
+      <input class="fi" type="text" id="ev-name" value="${esc(e.name).replace(/"/g,'&quot;')}"/>
+    </div>
+    <div class="fg">
+      <label class="fl">예정일</label>
+      <input class="fi" type="date" id="ev-date" value="${dStr}"/>
+    </div>
+    <div class="fg">
+      <label class="fl">분류</label>
+      <select class="fi" id="ev-category">
+        ${['정책','외교','통화','지정학','기업','거시'].map(c => `<option value="${c}" ${c===e.category?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+
+    <div style="background:rgba(52,211,153,.08);border-left:3px solid var(--g);padding:10px;border-radius:4px;margin:14px 0 10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--g);margin-bottom:6px;">🟢 상 시나리오</div>
+      <div class="fg"><label class="fl" style="font-size:10px;">예상 결과</label><input class="fi" type="text" id="ev-high-result" value="${esc(e.scenarios.high.result).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">시장 영향</label><input class="fi" type="text" id="ev-high-impact" value="${esc(e.scenarios.high.marketImpact).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">본인 행동 계획</label><input class="fi" type="text" id="ev-high-action" value="${esc(e.scenarios.high.action).replace(/"/g,'&quot;')}"/></div>
+    </div>
+
+    <div style="background:rgba(251,191,36,.08);border-left:3px solid var(--y);padding:10px;border-radius:4px;margin:10px 0;">
+      <div style="font-size:11px;font-weight:700;color:var(--y);margin-bottom:6px;">🟡 중 시나리오</div>
+      <div class="fg"><label class="fl" style="font-size:10px;">예상 결과</label><input class="fi" type="text" id="ev-mid-result" value="${esc(e.scenarios.mid.result).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">시장 영향</label><input class="fi" type="text" id="ev-mid-impact" value="${esc(e.scenarios.mid.marketImpact).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">본인 행동 계획</label><input class="fi" type="text" id="ev-mid-action" value="${esc(e.scenarios.mid.action).replace(/"/g,'&quot;')}"/></div>
+    </div>
+
+    <div style="background:rgba(248,113,113,.08);border-left:3px solid var(--r);padding:10px;border-radius:4px;margin:10px 0;">
+      <div style="font-size:11px;font-weight:700;color:var(--r);margin-bottom:6px;">🔴 하 시나리오</div>
+      <div class="fg"><label class="fl" style="font-size:10px;">예상 결과</label><input class="fi" type="text" id="ev-low-result" value="${esc(e.scenarios.low.result).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">시장 영향</label><input class="fi" type="text" id="ev-low-impact" value="${esc(e.scenarios.low.marketImpact).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">본인 행동 계획</label><input class="fi" type="text" id="ev-low-action" value="${esc(e.scenarios.low.action).replace(/"/g,'&quot;')}"/></div>
+    </div>
+
+    <button class="btn btn-p btn-w" onclick="saveEditEvent(${id})">💾 저장</button>
+  `);
+};
+
+window.saveEditEvent = function(id){
+  const e = S.upcomingEvents?.list?.find(x=>x.id===id);
+  if(!e) return;
+
+  const name = document.getElementById("ev-name").value.trim();
+  const date = document.getElementById("ev-date").value;
+  const highR = document.getElementById("ev-high-result").value.trim();
+  const highI = document.getElementById("ev-high-impact").value.trim();
+  const highA = document.getElementById("ev-high-action").value.trim();
+  const midR = document.getElementById("ev-mid-result").value.trim();
+  const midI = document.getElementById("ev-mid-impact").value.trim();
+  const midA = document.getElementById("ev-mid-action").value.trim();
+  const lowR = document.getElementById("ev-low-result").value.trim();
+  const lowI = document.getElementById("ev-low-impact").value.trim();
+  const lowA = document.getElementById("ev-low-action").value.trim();
+
+  if(!name || !date){ alert("이름과 날짜는 필수입니다"); return; }
+  if(!highR || !highI || !highA || !midR || !midI || !midA || !lowR || !lowI || !lowA){
+    alert("모든 시나리오 필드를 채워야 저장됩니다");
+    return;
+  }
+
+  e.name = name;
+  e.date = new Date(date).toISOString();
+  e.category = document.getElementById("ev-category").value;
+  e.scenarios.high = { result: highR, marketImpact: highI, action: highA };
+  e.scenarios.mid  = { result: midR,  marketImpact: midI,  action: midA };
+  e.scenarios.low  = { result: lowR,  marketImpact: lowI,  action: lowA };
+
+  save(); closeDrawer(); renderPage();
+};
+
+window.deleteEvent = function(id){
+  if(!confirm("이 이벤트를 삭제할까요?")) return;
+  S.upcomingEvents.list = S.upcomingEvents.list.filter(e=>e.id!==id);
+  save(); closeDrawer(); renderPage();
+};
+
+window.reviewEvent = function(id){
+  const e = S.upcomingEvents?.list?.find(x=>x.id===id);
+  if(!e) return;
+
+  openDrawer(`
+    <div class="dtitle">📝 사후 점검: ${esc(e.name)}</div>
+    <div style="font-size:11px;color:var(--tx2);margin-bottom:12px;padding:8px 10px;background:rgba(167,139,250,.08);border-radius:6px;">
+      💡 실제 결과를 기록하고, 본인 시나리오 예측이 맞았는지 평가하세요.<br>
+      이 누적이 가설 점검의 정확도 기반이 됩니다.
+    </div>
+
+    <div style="background:var(--s2);border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:10.5px;color:var(--tx2);line-height:1.5;">
+      <b style="color:var(--g);">🟢 상:</b> ${esc(e.scenarios.high.result)}<br>
+      <b style="color:var(--y);">🟡 중:</b> ${esc(e.scenarios.mid.result)}<br>
+      <b style="color:var(--r);">🔴 하:</b> ${esc(e.scenarios.low.result)}
+    </div>
+
+    <div class="fg">
+      <label class="fl">실제 결과</label>
+      <textarea class="fi" id="rv-actual" rows="3" placeholder="실제 이벤트 결과를 기록하세요"></textarea>
+    </div>
+    <div class="fg">
+      <label class="fl">예측 적중도</label>
+      <select class="fi" id="rv-correct">
+        <option value="정확">✅ 정확 - 예측한 시나리오 그대로 발생</option>
+        <option value="부분 적중">🟡 부분 적중 - 일부 맞고 일부 빗나감</option>
+        <option value="빗나감">❌ 빗나감 - 전혀 다른 결과</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label class="fl">학습 / 다음에 반영할 점</label>
+      <textarea class="fi" id="rv-lessons" rows="3" placeholder="• 무엇을 놓쳤나&#10;• 다음 예측에 반영할 점"></textarea>
+    </div>
+    <button class="btn btn-p btn-w" onclick="saveReview(${id})">💾 점검 완료</button>
+  `);
+};
+
+window.saveReview = function(id){
+  const e = S.upcomingEvents?.list?.find(x=>x.id===id);
+  if(!e) return;
+
+  const actual = document.getElementById("rv-actual").value.trim();
+  const correct = document.getElementById("rv-correct").value;
+  const lessons = document.getElementById("rv-lessons").value.trim();
+
+  if(!actual){ alert("실제 결과를 입력하세요"); return; }
+
+  e.reviewed = true;
+  e.review = {
+    reviewedAt: ts(),
+    actualOutcome: actual,
+    predictedCorrectly: correct,
+    lessons: lessons
+  };
   save(); closeDrawer(); renderPage();
 };
 

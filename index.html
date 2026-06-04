@@ -264,6 +264,9 @@ const DB = {
 };
 
 /* ── 2. 기본 데이터 ──────────────────────────────────── */
+// 이벤트 카탈로그 - 팩트 + 시나리오 초안 (사용자가 채택 후 본인 확률 평가)
+const EVENT_CATALOG = [{"id":"E001","name":"미국 FOMC 금리 결정 + 점도표","defaultDate":"2026-06-11","category":"통화","fact":"연준 6월 정기회의, 금리 결정과 향후 경로 시그널","scenarios":{"high":{"result":"금리 인하 또는 비둘기 톤","marketImpact":"코스피 +1~3%, 외국인 매수, 환율 약세","action":"현 포지션 유지, 추세 추종"},"mid":{"result":"동결 + 중립 톤","marketImpact":"보합 또는 ±1%","action":"관망"},"low":{"result":"매파 톤, 인하 후퇴","marketImpact":"코스피 -1~3%, 환율 강세","action":"변동성 확대 대비, 안전자산 일부 확보"}}},{"id":"E002","name":"MSCI 시장분류 발표","defaultDate":"2026-06-25","category":"정책","fact":"한국의 선진국 워치리스트 편입 여부 결정. 12번째 도전","scenarios":{"high":{"result":"워치리스트 등재 성공","marketImpact":"코스피 +3~5%, 1년 내 패시브 30조 유입 기대","action":"9,000 돌파 시 AI전력 30% 익절 검토"},"mid":{"result":"보류, 분기 추가 관찰","marketImpact":"보합 또는 ±1%","action":"현 포지션 유지"},"low":{"result":"거부, 평가 후퇴","marketImpact":"코스피 -3~5%, 외국인 추가 매도","action":"어깨 매도 1단계 발동 검토"}}},{"id":"E003","name":"한국은행 금통위","defaultDate":"2026-06-26","category":"통화","fact":"5월 점도표 매파 전환 후 첫 회의","scenarios":{"high":{"result":"동결 + 비둘기 톤","marketImpact":"코스피 +1~2%, 외국인 채권 매수","action":"현 포지션 유지"},"mid":{"result":"동결 + 점도표 유지","marketImpact":"보합","action":"관망"},"low":{"result":"0.25%p 인상","marketImpact":"코스피 -1~3%, 환율 약세","action":"금융주 비중 확대 검토"}}},{"id":"E004","name":"한국 6월 수출입 통계","defaultDate":"2026-07-01","category":"거시","fact":"관세청 발표. 반도체 수출이 핵심 지표","scenarios":{"high":{"result":"수출 +30%+ 호조","marketImpact":"코스피 +1~2%, 반도체 강세","action":"현 포지션 유지"},"mid":{"result":"예상치 부합 +15~25%","marketImpact":"보합","action":"관망"},"low":{"result":"기대 미달 +10% 미만","marketImpact":"코스피 -1~2%, 반도체 차익실현","action":"변동성 관찰"}}},{"id":"E005","name":"삼성·하이닉스 2분기 잠정실적","defaultDate":"2026-07-07","category":"기업","fact":"사용자 핵심 보유 종목 직접 영향","scenarios":{"high":{"result":"컨센서스 큰 폭 상회","marketImpact":"반도체 +3~5%, TIGER 반도체TOP10 직접 수혜","action":"9,500 도달 시 부분 익절"},"mid":{"result":"컨센서스 부합","marketImpact":"보합 또는 소폭 상승","action":"현 포지션 유지"},"low":{"result":"컨센서스 하회 또는 가이던스 하향","marketImpact":"반도체 -3~7%, AI Capex 우려 부각","action":"시나리오 D 진입 점검, 어깨 매도 검토"}}},{"id":"E006","name":"미국 7월 FOMC","defaultDate":"2026-07-30","category":"통화","fact":"여름 시즌 금리 결정","scenarios":{"high":{"result":"금리 인하 또는 비둘기","marketImpact":"코스피 +1~3%","action":"현 포지션 유지"},"mid":{"result":"동결","marketImpact":"보합","action":"관망"},"low":{"result":"매파, 인하 지연","marketImpact":"코스피 -1~3%","action":"안전자산 일부 확보"}}},{"id":"E007","name":"잭슨홀 미팅","defaultDate":"2026-08-22","category":"통화","fact":"연준 의장 연례 정책 연설. 통화정책 큰 흐름 시그널","scenarios":{"high":{"result":"비둘기 톤, 인하 시그널 강화","marketImpact":"코스피 +2~4%","action":"추세 추종"},"mid":{"result":"중립 톤","marketImpact":"보합","action":"관망"},"low":{"result":"매파 톤","marketImpact":"코스피 -2~4%, 변동성 확대","action":"어깨 매도 검토"}}},{"id":"E008","name":"엔비디아 2분기 실적","defaultDate":"2026-08-27","category":"기업","fact":"AI Capex 슈퍼사이클의 핵심 바로미터","scenarios":{"high":{"result":"가이던스 상회 + 데이터센터 수요 강세","marketImpact":"삼성·하이닉스 동반 상승 +2~4%","action":"현 포지션 유지"},"mid":{"result":"컨센서스 부합","marketImpact":"보합","action":"관망"},"low":{"result":"가이던스 하향, AI Capex 둔화 시그널","marketImpact":"반도체 -5~10% 충격, 시나리오 D 본격화","action":"어깨 매도 즉시 발동"}}},{"id":"E009","name":"외환시장 24시간 시행","defaultDate":"2026-07-15","category":"정책","fact":"외국인 접근성 확대의 실물 첫 단계","scenarios":{"high":{"result":"시행 초기 외국인 자금 본격 유입","marketImpact":"원화 강세, 코스피 +1~2%","action":"현 포지션 유지"},"mid":{"result":"예정대로 시행, 시장 반응 제한적","marketImpact":"보합","action":"관망"},"low":{"result":"시행 지연 또는 기술적 문제","marketImpact":"보합 또는 -1%","action":"관망"}}},{"id":"E010","name":"국민참여성장펀드 2차분 출시","defaultDate":"2026-06-15","category":"정책","fact":"정부 주도 자본시장 활성화 펀드 추가 출시","scenarios":{"high":{"result":"대규모 자금 유입 + 출시 흥행","marketImpact":"코스피 +1~2%, 대형주 강세","action":"현 포지션 유지"},"mid":{"result":"예정대로 출시","marketImpact":"보합","action":"관망"},"low":{"result":"수요 부진 또는 출시 연기","marketImpact":"정책 모멘텀 약화, 보합~-1%","action":"관망"}}},{"id":"E011","name":"한미 차기 정상회담 발표","defaultDate":"","category":"외교","fact":"트럼프-이재명 회담 일정 발표 가능성","scenarios":{"high":{"result":"회담 일정 확정 + 반도체 협력 의제","marketImpact":"코스피 +1~3%, 반도체 강세","action":"현 포지션 유지"},"mid":{"result":"일정만 발표, 의제 미공개","marketImpact":"보합~+1%","action":"관망"},"low":{"result":"회담 연기 또는 갈등 시그널","marketImpact":"코스피 -1~2%","action":"관망"}}},{"id":"E012","name":"24시간 주식거래 단계 시행","defaultDate":"","category":"정책","fact":"주식시장 거래시간 연장 단계적 시행 발표","scenarios":{"high":{"result":"시행 일정 확정 + 시장 호응","marketImpact":"코스피 +1~2%","action":"현 포지션 유지"},"mid":{"result":"예정대로 발표","marketImpact":"보합","action":"관망"},"low":{"result":"지연 또는 축소","marketImpact":"보합 또는 -1%","action":"관망"}}},{"id":"E013","name":"배당소득 분리과세 확대","defaultDate":"","category":"정책","fact":"정부 자본시장 친화 세제 정책","scenarios":{"high":{"result":"확대 시행 발표","marketImpact":"배당주 강세, 코스피 +1~2%","action":"배당 ETF 비중 검토"},"mid":{"result":"예정대로 진행","marketImpact":"보합","action":"관망"},"low":{"result":"축소 또는 무산","marketImpact":"정책 모멘텀 약화","action":"관망"}}},{"id":"E014","name":"외국인 통합계좌 운영 발표","defaultDate":"","category":"정책","fact":"외국인 자금 유입 인프라 정비","scenarios":{"high":{"result":"시행 + 230억 달러 유입 기대","marketImpact":"외국인 매수 모멘텀, 코스피 +2~3%","action":"현 포지션 유지"},"mid":{"result":"발표만 진행","marketImpact":"보합","action":"관망"},"low":{"result":"지연","marketImpact":"보합","action":"관망"}}},{"id":"E015","name":"미국 ISM 제조업 PMI","defaultDate":"","category":"거시","fact":"미국 제조업 경기 선행 지표. 50이 경기 분기점","scenarios":{"high":{"result":"50 이상 + 강한 확장","marketImpact":"글로벌 위험자산 강세","action":"현 포지션 유지"},"mid":{"result":"50 부근 (경기 중립)","marketImpact":"보합","action":"관망"},"low":{"result":"45 이하 (경기 침체 신호)","marketImpact":"글로벌 충격, 코스피 -2~5%","action":"시나리오 C 진입 점검"}}},{"id":"E016","name":"미국 고용보고서","defaultDate":"","category":"거시","fact":"비농업부문 고용 + 실업률. 금리 정책 핵심 입력","scenarios":{"high":{"result":"고용 호조 + 임금 안정","marketImpact":"위험자산 강세","action":"현 포지션 유지"},"mid":{"result":"예상 부합","marketImpact":"보합","action":"관망"},"low":{"result":"고용 급감 또는 실업률 급증","marketImpact":"침체 우려 부각, 코스피 -2~4%","action":"안전자산 일부 확보"}}},{"id":"E017","name":"미국 CPI","defaultDate":"","category":"거시","fact":"인플레이션 지표. 금리 정책 직결","scenarios":{"high":{"result":"예상 하회 (인플레 둔화)","marketImpact":"금리 인하 기대, 코스피 +1~3%","action":"현 포지션 유지"},"mid":{"result":"예상 부합","marketImpact":"보합","action":"관망"},"low":{"result":"예상 상회 (인플레 재가속)","marketImpact":"금리 인하 지연, 코스피 -1~3%","action":"관망"}}},{"id":"E018","name":"한국 수출입 통계 (월초)","defaultDate":"","category":"거시","fact":"한국 경제 + 반도체 수출 동향","scenarios":{"high":{"result":"수출 호조 + 반도체 강세","marketImpact":"코스피 +1~2%","action":"현 포지션 유지"},"mid":{"result":"예상 부합","marketImpact":"보합","action":"관망"},"low":{"result":"수출 둔화","marketImpact":"코스피 -1~2%","action":"관망"}}},{"id":"E019","name":"중국 PMI","defaultDate":"","category":"거시","fact":"한국 대중 수출 영향","scenarios":{"high":{"result":"강한 확장","marketImpact":"한국 수출주 강세, 코스피 +1%","action":"현 포지션 유지"},"mid":{"result":"50 부근","marketImpact":"보합","action":"관망"},"low":{"result":"축소 (45 이하)","marketImpact":"한국 수출 우려, 코스피 -1~2%","action":"관망"}}},{"id":"E020","name":"북한 도발 가능성","defaultDate":"","category":"지정학","fact":"미사일·핵실험 등 한반도 긴장 고조","scenarios":{"high":{"result":"도발 없음 또는 대화 시그널","marketImpact":"보합 또는 +1%","action":"현 포지션 유지"},"mid":{"result":"소규모 도발 (단거리 미사일)","marketImpact":"단기 -1~2%, 빠른 회복","action":"관망"},"low":{"result":"중대 도발 (핵실험·ICBM)","marketImpact":"코스피 -3~7%, 외국인 매도","action":"어깨 매도 검토"}}},{"id":"E021","name":"미·중 무역 마찰 재점화","defaultDate":"","category":"외교","fact":"관세 인상, 수출 통제 등 갈등 격화","scenarios":{"high":{"result":"협상 진전 또는 안정","marketImpact":"위험자산 강세","action":"현 포지션 유지"},"mid":{"result":"현 상태 유지","marketImpact":"보합","action":"관망"},"low":{"result":"관세 인상 또는 수출 통제 확대","marketImpact":"코스피 -3~5%, 반도체 우려","action":"변동성 확대 대비"}}},{"id":"E022","name":"AI Capex 둔화 신호 (빅테크 가이던스)","defaultDate":"","category":"기업","fact":"MS·구글·메타·아마존 데이터센터 투자 가이던스","scenarios":{"high":{"result":"Capex 상향 가이던스","marketImpact":"반도체 +2~5%","action":"현 포지션 유지"},"mid":{"result":"기존 가이던스 유지","marketImpact":"보합","action":"관망"},"low":{"result":"Capex 하향 가이던스 (2개사 이상)","marketImpact":"반도체 -5~10%, 시나리오 D 본격화","action":"어깨 매도 즉시 실행"}}},{"id":"E023","name":"미국 경기 침체 신호 (PMI 45 하향)","defaultDate":"","category":"거시","fact":"ISM PMI 45 이하 + 실업률 급증 등 복합 신호","scenarios":{"high":{"result":"지표 안정 또는 반등","marketImpact":"보합 또는 강세","action":"현 포지션 유지"},"mid":{"result":"단일 지표 약세","marketImpact":"보합","action":"관망"},"low":{"result":"복합 침체 신호 확정","marketImpact":"글로벌 위험자산 -10~20%","action":"시나리오 C, 안전자산 본격 확보"}}},{"id":"E024","name":"한국 환율 1,500원 돌파","defaultDate":"","category":"통화","fact":"원화 약세 본격화, 외국인 자금 이탈 신호","scenarios":{"high":{"result":"환율 안정 (1,400원대)","marketImpact":"외국인 매수 안정","action":"현 포지션 유지"},"mid":{"result":"1,450~1,500원 박스권","marketImpact":"보합","action":"관망"},"low":{"result":"1,500원 돌파 + 추가 약세","marketImpact":"외국인 매도 본격화, 코스피 -3~5%","action":"시나리오 E, 미국 ETF 분산 검토"}}},{"id":"E025","name":"HBM 가격 하락 보도","defaultDate":"","category":"기업","fact":"주요 외신 또는 시장조사기관의 HBM 가격 동향","scenarios":{"high":{"result":"가격 강세 또는 공급 부족 보도","marketImpact":"삼성·하이닉스 +2~3%","action":"현 포지션 유지"},"mid":{"result":"가격 안정","marketImpact":"보합","action":"관망"},"low":{"result":"가격 하락 본격화 보도","marketImpact":"반도체 -3~5%, 시나리오 D 진입","action":"어깨 매도 검토"}}}];
+
 const DEFAULT = {
   vix:{value:28.4,prev:24.1,hist:[18,20,22,19,24,28,31,28,26,28],at:new Date().toISOString()},
   vkospi:{value:22.1,prev:20.5,hist:[15,17,19,16,21,24,26,22,21,22],at:new Date().toISOString()},
@@ -4830,82 +4833,252 @@ window.saveHypothesisCheck = function(){
 // ════════ 사전 이벤트 검토 함수 ════════
 
 window.addEvent = function(){
+  // 카탈로그 + 사용자 정의 두 옵션 제공
   openDrawer(`
     <div class="dtitle">📅 사전 이벤트 등록</div>
     <div style="font-size:11px;color:var(--tx2);margin-bottom:12px;line-height:1.6;padding:8px 10px;background:rgba(167,139,250,.08);border-radius:6px;">
-      ⚠️ 시나리오 3개(상/중/하)와 행동 계획을 모두 입력해야 저장됩니다.<br>
-      이 마찰이 양면적 사고를 강제합니다.
+      💡 카탈로그에서 선택하면 팩트와 시나리오 초안이 자동 채워집니다.<br>
+      ⚠️ <b>본인 확률 평가는 직접 입력</b>해야 저장됩니다 (자기점검 장치).
     </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn btn-p" style="flex:1;" onclick="showEventCatalog()">📋 카탈로그에서 선택</button>
+      <button class="btn btn-g" style="flex:1;" onclick="showCustomEventForm()">✏️ 직접 입력</button>
+    </div>
+
+    <div id="ev-mode-content"></div>
+  `);
+  showEventCatalog();
+};
+
+window.showCustomEventForm = function(){
+  const div = document.getElementById('ev-mode-content');
+  if(!div) return;
+  div.innerHTML = renderEventForm(null);
+};
+
+window.showEventCatalog = function(){
+  const div = document.getElementById('ev-mode-content');
+  if(!div) return;
+
+  // 카탈로그를 분류별로 그룹화
+  const groups = {};
+  EVENT_CATALOG.forEach(e => {
+    if(!groups[e.category]) groups[e.category] = [];
+    groups[e.category].push(e);
+  });
+
+  const catColor = {
+    "정책":"#4f80ff","외교":"#7eb8ff","통화":"#fbbf24",
+    "지정학":"#f87171","기업":"#34d399","거시":"#a78bfa"
+  };
+
+  let html = '<div style="font-size:11px;color:var(--tx3);margin-bottom:10px;">📋 25개 이벤트 카탈로그 · 클릭하면 자동 채워짐</div>';
+
+  Object.keys(groups).forEach(cat => {
+    html += `<div style="font-size:11px;font-weight:700;color:${catColor[cat]||'var(--tx2)'};margin:12px 0 6px;">${esc(cat)} (${groups[cat].length})</div>`;
+    groups[cat].forEach(e => {
+      const dateStr = e.defaultDate || '시점 미정';
+      html += `<div onclick="selectCatalogEvent('${e.id}')" style="background:var(--s2);border-left:3px solid ${catColor[cat]||'var(--tx3)'};border-radius:6px;padding:10px 12px;margin-bottom:6px;cursor:pointer;">
+        <div style="font-size:12px;font-weight:700;color:var(--tx);">${esc(e.name)}</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px;">${dateStr}</div>
+        <div style="font-size:10px;color:var(--tx2);margin-top:4px;line-height:1.5;">${esc(e.fact)}</div>
+      </div>`;
+    });
+  });
+
+  div.innerHTML = html;
+};
+
+window.selectCatalogEvent = function(catalogId){
+  const tpl = EVENT_CATALOG.find(e => e.id === catalogId);
+  if(!tpl) return;
+  const div = document.getElementById('ev-mode-content');
+  if(!div) return;
+  div.innerHTML = renderEventForm(tpl);
+};
+
+window.renderEventForm = function(tpl){
+  // tpl이 있으면 카탈로그에서 가져온 데이터로 채움, 없으면 빈 폼
+  const isFromCatalog = !!tpl;
+  const name = tpl ? tpl.name : '';
+  const date = tpl ? tpl.defaultDate : '';
+  const category = tpl ? tpl.category : '정책';
+  const s = tpl ? tpl.scenarios : {
+    high:{result:'',marketImpact:'',action:''},
+    mid:{result:'',marketImpact:'',action:''},
+    low:{result:'',marketImpact:'',action:''}
+  };
+
+  return `
+    ${isFromCatalog ? `<div style="background:rgba(52,211,153,.08);border-left:3px solid var(--g);padding:8px 10px;border-radius:4px;margin-bottom:12px;font-size:11px;color:var(--tx2);line-height:1.5;">
+      ✅ 카탈로그에서 가져옴 · 시나리오는 참고용 초안<br>
+      📌 본인 시각에 맞게 자유롭게 수정하세요
+    </div>` : ''}
+
     <div class="fg">
       <label class="fl">이벤트명</label>
-      <input class="fi" type="text" id="ev-name" placeholder="예: MSCI 시장분류 발표"/>
+      <input class="fi" type="text" id="ev-name" value="${esc(name).replace(/"/g,'&quot;')}" placeholder="예: MSCI 시장분류 발표"/>
     </div>
     <div class="fg">
       <label class="fl">예정일</label>
-      <input class="fi" type="date" id="ev-date"/>
+      <input class="fi" type="date" id="ev-date" value="${date}"/>
     </div>
     <div class="fg">
       <label class="fl">분류</label>
       <select class="fi" id="ev-category">
-        <option value="정책">정책 (자본시장·세제·규제)</option>
-        <option value="외교">외교 (정상회담·통상)</option>
-        <option value="통화">통화 (금통위·FOMC·환율)</option>
-        <option value="지정학">지정학 (북한·미중·전쟁)</option>
-        <option value="기업">기업 (실적·M&A)</option>
-        <option value="거시">거시 (PMI·고용·GDP)</option>
+        ${['정책','외교','통화','지정학','기업','거시'].map(c => `<option value="${c}" ${c===category?'selected':''}>${c}</option>`).join('')}
       </select>
     </div>
 
     <div style="background:rgba(52,211,153,.08);border-left:3px solid var(--g);padding:10px;border-radius:4px;margin:14px 0 10px;">
       <div style="font-size:11px;font-weight:700;color:var(--g);margin-bottom:6px;">🟢 상 시나리오 (호재 결과)</div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">예상 결과</label>
-        <input class="fi" type="text" id="ev-high-result" placeholder="예: 워치리스트 등재 성공"/>
-      </div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">시장 영향</label>
-        <input class="fi" type="text" id="ev-high-impact" placeholder="예: 코스피 +3~5%, 외국인 순매수 전환"/>
-      </div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">본인 행동 계획</label>
-        <input class="fi" type="text" id="ev-high-action" placeholder="예: 9,000 돌파 시 AI전력 30% 익절"/>
-      </div>
+      <div class="fg"><label class="fl" style="font-size:10px;">예상 결과</label><input class="fi" type="text" id="ev-high-result" value="${esc(s.high.result).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">시장 영향</label><input class="fi" type="text" id="ev-high-impact" value="${esc(s.high.marketImpact).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">본인 행동 계획</label><input class="fi" type="text" id="ev-high-action" value="${esc(s.high.action).replace(/"/g,'&quot;')}"/></div>
     </div>
 
     <div style="background:rgba(251,191,36,.08);border-left:3px solid var(--y);padding:10px;border-radius:4px;margin:10px 0;">
       <div style="font-size:11px;font-weight:700;color:var(--y);margin-bottom:6px;">🟡 중 시나리오 (보합 결과)</div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">예상 결과</label>
-        <input class="fi" type="text" id="ev-mid-result" placeholder="예: 보류, 내년 재검토"/>
-      </div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">시장 영향</label>
-        <input class="fi" type="text" id="ev-mid-impact" placeholder="예: 코스피 -1~+1% 보합"/>
-      </div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">본인 행동 계획</label>
-        <input class="fi" type="text" id="ev-mid-action" placeholder="예: 현 포지션 유지, 관망"/>
-      </div>
+      <div class="fg"><label class="fl" style="font-size:10px;">예상 결과</label><input class="fi" type="text" id="ev-mid-result" value="${esc(s.mid.result).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">시장 영향</label><input class="fi" type="text" id="ev-mid-impact" value="${esc(s.mid.marketImpact).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">본인 행동 계획</label><input class="fi" type="text" id="ev-mid-action" value="${esc(s.mid.action).replace(/"/g,'&quot;')}"/></div>
     </div>
 
     <div style="background:rgba(248,113,113,.08);border-left:3px solid var(--r);padding:10px;border-radius:4px;margin:10px 0;">
       <div style="font-size:11px;font-weight:700;color:var(--r);margin-bottom:6px;">🔴 하 시나리오 (악재 결과)</div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">예상 결과</label>
-        <input class="fi" type="text" id="ev-low-result" placeholder="예: 거부, 평가 후퇴"/>
-      </div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">시장 영향</label>
-        <input class="fi" type="text" id="ev-low-impact" placeholder="예: 코스피 -3~5%, 외국인 추가 매도"/>
-      </div>
-      <div class="fg">
-        <label class="fl" style="font-size:10px;">본인 행동 계획</label>
-        <input class="fi" type="text" id="ev-low-action" placeholder="예: 7,500 하향 돌파 시 반도체 5% 익절"/>
-      </div>
+      <div class="fg"><label class="fl" style="font-size:10px;">예상 결과</label><input class="fi" type="text" id="ev-low-result" value="${esc(s.low.result).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">시장 영향</label><input class="fi" type="text" id="ev-low-impact" value="${esc(s.low.marketImpact).replace(/"/g,'&quot;')}"/></div>
+      <div class="fg"><label class="fl" style="font-size:10px;">본인 행동 계획</label><input class="fi" type="text" id="ev-low-action" value="${esc(s.low.action).replace(/"/g,'&quot;')}"/></div>
     </div>
 
-    <button class="btn btn-p btn-w" style="margin-top:10px;" onclick="saveNewEvent()">💾 저장 (모든 필드 필수)</button>
-  `);
+    <!-- ════ 본인 확률 평가 (옵션 C 막대 + 합산 100% 강제) ════ -->
+    <div style="background:rgba(79,128,255,.08);border-left:3px solid var(--acc);padding:10px;border-radius:4px;margin:14px 0;">
+      <div style="font-size:11px;font-weight:700;color:var(--acc2);margin-bottom:8px;">📊 본인 확률 평가 (합산 100% 필수)</div>
+      <div style="font-size:10px;color:var(--tx3);margin-bottom:10px;">각 시나리오의 막대를 탭해서 본인이 보는 확률을 선택하세요. 합산 100%가 되어야 저장됩니다.</div>
+
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="font-size:10px;color:var(--g);font-weight:700;">🟢 상 확률</div>
+          <div id="prob-high-val" style="font-size:13px;font-weight:900;font-family:var(--mono);color:var(--g);">50%</div>
+        </div>
+        <div id="prob-high-bar" class="prob-bar-row" data-key="high"></div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="font-size:10px;color:var(--y);font-weight:700;">🟡 중 확률</div>
+          <div id="prob-mid-val" style="font-size:13px;font-weight:900;font-family:var(--mono);color:var(--y);">30%</div>
+        </div>
+        <div id="prob-mid-bar" class="prob-bar-row" data-key="mid"></div>
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="font-size:10px;color:var(--r);font-weight:700;">🔴 하 확률</div>
+          <div id="prob-low-val" style="font-size:13px;font-weight:900;font-family:var(--mono);color:var(--r);">20%</div>
+        </div>
+        <div id="prob-low-bar" class="prob-bar-row" data-key="low"></div>
+      </div>
+
+      <div id="prob-sum" style="text-align:center;font-size:11px;margin-top:10px;padding:8px;background:var(--s2);border-radius:6px;font-family:var(--mono);color:var(--g);font-weight:700;">합산 100% ✓</div>
+    </div>
+
+    <div class="fg">
+      <label class="fl">📝 내 의견 첨언 (선택)</label>
+      <textarea class="fi" id="ev-comment" rows="3" placeholder="이 이벤트에 대한 본인 시각, 가설과의 연관성 등"></textarea>
+    </div>
+
+    <button class="btn btn-p btn-w" style="margin-top:10px;" onclick="saveNewEvent()">💾 저장 (합산 100% + 모든 필드 필수)</button>
+  `;
+};
+
+
+// ════════ 확률 막대 그래프 (옵션 C + 100% 강제) ════════
+// 상태 변수
+window._probState = { high: 50, mid: 30, low: 20 };
+
+window.initProbBars = function(initial){
+  if(initial){
+    window._probState = { ...initial };
+  } else {
+    window._probState = { high: 50, mid: 30, low: 20 };
+  }
+
+  ['high','mid','low'].forEach(k => {
+    const row = document.getElementById('prob-' + k + '-bar');
+    if(!row) return;
+    renderProbBar(k);
+  });
+  updateProbSum();
+};
+
+window.renderProbBar = function(key){
+  const row = document.getElementById('prob-' + key + '-bar');
+  if(!row) return;
+  const colors = { high: 'var(--g)', mid: 'var(--y)', low: 'var(--r)' };
+  const current = window._probState[key];
+  const selectedIdx = Math.round(current / 10); // 0~10 (0%, 10%, ..., 100%)
+
+  let html = '';
+  for(let i = 0; i <= 10; i++){
+    const pct = i * 10;
+    const selected = i <= selectedIdx && i > 0;
+    const isZero = i === 0 && selectedIdx === 0;
+    const height = 20 + i * 4; // px
+    html += `<div onclick="selectProb('${key}', ${pct})" style="flex:1;height:${height}px;background:${selected || isZero ? colors[key] : 'var(--s3)'};border-radius:3px;cursor:pointer;position:relative;transition:background .15s;display:flex;align-items:flex-end;justify-content:center;">
+      <div style="position:absolute;bottom:-16px;font-size:9px;font-family:var(--mono);color:${selectedIdx === i ? 'var(--tx)' : 'var(--tx3)'};font-weight:${selectedIdx === i ? '700' : '400'};white-space:nowrap;">${pct}</div>
+    </div>`;
+  }
+  row.style.cssText = "display:flex;gap:3px;align-items:flex-end;height:60px;margin-bottom:24px;";
+  row.innerHTML = html;
+};
+
+window.selectProb = function(key, pct){
+  window._probState[key] = pct;
+  const valEl = document.getElementById('prob-' + key + '-val');
+  if(valEl) valEl.textContent = pct + '%';
+  renderProbBar(key);
+  updateProbSum();
+};
+
+window.updateProbSum = function(){
+  const sum = window._probState.high + window._probState.mid + window._probState.low;
+  const el = document.getElementById('prob-sum');
+  if(!el) return;
+  if(sum === 100){
+    el.textContent = '합산 100% ✓';
+    el.style.color = 'var(--g)';
+    el.style.background = 'rgba(52,211,153,.1)';
+  } else {
+    const diff = 100 - sum;
+    const sign = diff > 0 ? '+' : '';
+    el.textContent = `합산 ${sum}% (${sign}${diff}% 조정 필요)`;
+    el.style.color = 'var(--r)';
+    el.style.background = 'rgba(248,113,113,.1)';
+  }
+};
+
+// 드로어가 열린 후 막대 초기화 - openDrawer 후 호출 필요
+// renderEventForm 직후 자동 초기화하도록 wrapper 만듦
+const _origAddEvent = window.addEvent;
+window.addEvent = function(){
+  _origAddEvent();
+  setTimeout(()=>{ if(document.getElementById('prob-high-bar')) initProbBars(); }, 100);
+};
+
+// selectCatalogEvent 후에도 막대 초기화
+const _origSelectCatalogEvent = window.selectCatalogEvent;
+window.selectCatalogEvent = function(catalogId){
+  _origSelectCatalogEvent(catalogId);
+  setTimeout(()=>{ if(document.getElementById('prob-high-bar')) initProbBars(); }, 50);
+};
+
+// showCustomEventForm 후에도 막대 초기화
+const _origShowCustom = window.showCustomEventForm;
+window.showCustomEventForm = function(){
+  _origShowCustom();
+  setTimeout(()=>{ if(document.getElementById('prob-high-bar')) initProbBars(); }, 50);
 };
 
 window.saveNewEvent = function(){
@@ -4921,6 +5094,7 @@ window.saveNewEvent = function(){
   const lowR = document.getElementById("ev-low-result").value.trim();
   const lowI = document.getElementById("ev-low-impact").value.trim();
   const lowA = document.getElementById("ev-low-action").value.trim();
+  const comment = document.getElementById("ev-comment")?.value?.trim() || "";
 
   // 강제 검증 - 시나리오 3개 모두 입력 필수
   if(!name){ alert("이벤트명을 입력하세요"); return; }
@@ -4928,6 +5102,13 @@ window.saveNewEvent = function(){
   if(!highR || !highI || !highA){ alert("상 시나리오 3필드 모두 입력하세요 (호재만 보지 마세요)"); return; }
   if(!midR || !midI || !midA){ alert("중 시나리오 3필드 모두 입력하세요"); return; }
   if(!lowR || !lowI || !lowA){ alert("하 시나리오 3필드 모두 입력하세요 (약세 시나리오 작성이 핵심)"); return; }
+
+  // 확률 합산 100% 강제
+  const probSum = window._probState.high + window._probState.mid + window._probState.low;
+  if(probSum !== 100){
+    alert("본인 확률 평가 합산이 " + probSum + "% 입니다.\n100%가 되도록 조정해주세요.");
+    return;
+  }
 
   if(!S.upcomingEvents) S.upcomingEvents = {list:[]};
   const maxId = S.upcomingEvents.list.reduce((m,e)=>Math.max(m, e.id||0), 0);
@@ -4943,6 +5124,8 @@ window.saveNewEvent = function(){
       mid:  { result: midR,  marketImpact: midI,  action: midA },
       low:  { result: lowR,  marketImpact: lowI,  action: lowA }
     },
+    probability: { ...window._probState },
+    comment: comment,
     reviewed: false,
     review: null
   });
@@ -4981,13 +5164,27 @@ window.viewEvent = function(id){
     </div>
 
     <div style="background:rgba(248,113,113,.08);border-left:3px solid var(--r);padding:10px;border-radius:4px;margin-bottom:14px;">
-      <div style="font-size:11px;font-weight:700;color:var(--r);margin-bottom:4px;">🔴 하 시나리오</div>
+      <div style="font-size:11px;font-weight:700;color:var(--r);margin-bottom:4px;">🔴 하 시나리오${e.probability ? ' · ' + e.probability.low + '%' : ''}</div>
       <div style="font-size:11px;color:var(--tx);line-height:1.6;">
         <b>결과:</b> ${esc(e.scenarios.low.result)}<br>
         <b>시장:</b> ${esc(e.scenarios.low.marketImpact)}<br>
         <b>행동:</b> ${esc(e.scenarios.low.action)}
       </div>
     </div>
+
+    ${e.probability ? `<div style="background:rgba(79,128,255,.08);border-left:3px solid var(--acc);padding:10px;border-radius:4px;margin-bottom:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--acc2);margin-bottom:6px;">📊 본인 확률 평가</div>
+      <div style="display:flex;gap:6px;font-size:11px;font-family:var(--mono);">
+        <div style="flex:1;color:var(--g);"><b>상</b> ${e.probability.high}%</div>
+        <div style="flex:1;color:var(--y);"><b>중</b> ${e.probability.mid}%</div>
+        <div style="flex:1;color:var(--r);"><b>하</b> ${e.probability.low}%</div>
+      </div>
+    </div>` : ''}
+
+    ${e.comment ? `<div style="background:var(--s2);border-radius:6px;padding:10px;margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--tx3);margin-bottom:4px;">📝 내 의견</div>
+      <div style="font-size:11px;color:var(--tx);line-height:1.6;">${esc(e.comment).replace(/\n/g,'<br>')}</div>
+    </div>` : ''}
 
     <div style="display:flex;gap:6px;">
       <button class="btn btn-p" style="flex:1;" onclick="editEvent(${id})">✏️ 수정</button>
